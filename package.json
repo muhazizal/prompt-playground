@@ -1,0 +1,15 @@
+{
+	"scripts": {
+		"demo": "node cli.mjs",
+		"demo:interactive": "node cli.mjs interactive",
+		"demo:chat": "node examples/chat_prompting.mjs",
+		"demo:embeddings": "node examples/embeddings.mjs",
+		"demo:tokens": "node examples/tokenization.mjs",
+		"demo:prompt": "node examples/prompt_engineering.mjs"
+	},
+	"dependencies": {
+		"@dqbd/tiktoken": "^1.0.22",
+		"dotenv": "^17.2.3",
+		"openai": "^6.7.0"
+	}
+}
