@@ -1,11 +1,50 @@
 # prompt-playground
 
-LLM basics with runnable demos, an interactive CLI, and a web app to explore:
+An end-to-end learning and experimentation repo for LLMs with:
 
-- Tokens (tokenization)
-- Embeddings (similarity scoring)
-- Chat prompting (role, iterative refinement, embedding-style prompt)
-- Web App (Nuxt + Nuxt UI + Express + Firebase): Save prompts/responses; visualize temperature
+- CLI demos for tokens, embeddings, and chat prompting
+- A simple API server that proxies to OpenAI with metrics
+- A Nuxt web app UI for multi-sample comparison and history
+
+## Overview
+
+This project helps you learn and experiment with LLM fundamentals and prompt design:
+
+- Explore tokenization and embeddings from the CLI
+- Try multiple prompting styles and compare outputs
+- Run a local API that captures per-run latency and token usage
+- Use a web UI to compare outputs across temperatures and samples, and save runs to Firestore
+
+## Project Structure
+
+- `cli.mjs` → Main CLI entry point
+- `api.mjs` → Express API server
+- `web/` → Nuxt web app
+  - `pages/` → Vue components
+  - `components/` → Reusable UI components
+  - `plugins/` → Firebase Firestore integration (optional)
+- `examples/` → Sample scripts for CLI demos
+
+## Tech Stack
+
+- Frontend
+  - Nuxt 4, Vue 3, Vite 7, Nitro 2
+  - Nuxt UI 4 components (UButton, UCard, USelectMenu, USlider, etc.)
+  - Icons via Nuxt Icon (local bundles like `heroicons`, `lucide`)
+  - TypeScript with Nuxt-generated `tsconfig` and local augmentations
+  - Optional Firebase Firestore integration via a Nuxt plugin
+- Backend
+  - Node.js with Express and CORS
+  - OpenAI SDK client
+  - ESM modules (`.mjs`)
+- Tooling
+  - NPM scripts for CLI, examples, API, and web dev
+  - Dotenv for local configuration
+
+## Data Flow
+
+- Web UI → API requests → OpenAI API
+- API → Firestore (optional) for run history storage
 
 ## Setup
 
@@ -67,10 +106,26 @@ Environment:
 
 Features:
 
-- Prompt form with model select, temperature slider, max tokens.
-- Temperature visualization bar updates with slider.
-- Save prompt + response to Firestore when Firebase is configured.
-- History list shows prior runs.
+- Prompt form with model select (`USelectMenu`), max tokens, samples
+- Temperatures multi-select to run multiple temperature batches at once
+- Multi-sample outputs per temperature, with per-run latency and token usage
+- Copy button for each sample output
+- Dynamic model list fetched from backend capabilities
+- Save prompt + runs to Firestore when Firebase is configured
+- History list shows past runs with metadata
+
+API Endpoints:
+
+- `POST /chat`
+  - Request body: `{ prompt, model, maxTokens, n, temperatures }`
+    - `n` = number of samples per run
+    - `temperatures` = array of temperatures to run (e.g., `[0.25, 0.5, 0.75]`)
+  - Response body: `{ runs: Array<{ temperature, choices, usage, durationMs }> }`
+    - `choices` = array of `{ index, text }`
+    - `usage` = `{ prompt_tokens, completion_tokens, total_tokens }`
+    - `durationMs` = latency in milliseconds per temperature run
+- `GET /models`
+  - Returns `{ models: Array<{ label, value }> }` from backend capabilities or a fallback list
 
 ## Prompt Templates
 
@@ -79,3 +134,9 @@ Features:
   - Few-shot transformation (style/format)
   - Structured extraction (schema)
   - Stepwise reasoning (concise steps)
+
+## Notes
+
+- Firestore is optional. If Firebase env vars are not set, the app still runs; saving will be skipped.
+- The web app uses Nuxt’s server-driven configuration. Types are derived from Nuxt’s generated `tsconfig` with local augmentations for injected app values.
+- The API server supports multi-sample output comparison across temperatures and reports per-run metrics; it does not stream tokens.
