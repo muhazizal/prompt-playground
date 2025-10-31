@@ -1,54 +1,42 @@
 <script setup lang="ts">
+import { Firestore } from 'firebase/firestore'
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+
+import { temperatureOptions } from '@/helpers/constants'
+import type { RunResult, HistoryEntry } from '@/helpers/types'
+
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
 
-const models = ref<Array<{ label: string; value: string }>>([
-	{ label: 'gpt-4o-mini', value: 'gpt-4o-mini' },
-	{ label: 'gpt-4o', value: 'gpt-4o' },
-])
+const models = ref<Array<{ label: string; value: string }>>([])
 
 const prompt = ref('Explain what temperature does in LLMs, briefly.')
-// Ensure a safe default without relying on array indexing
-const model = ref<string>('gpt-4o-mini')
-const temperature = ref(0.3)
+const model = ref<{ label: string; value: string }>({ label: 'gpt-4o-mini', value: 'gpt-4o-mini' })
 const maxTokens = ref(200)
 const samples = ref(1)
+const temperatureSelection = ref<Array<{ label: string; value: number }>>([
+	{ label: '0.50', value: 0.5 },
+])
 const loading = ref(false)
 const loadingModels = ref(false)
 const error = ref<string | null>(null)
 const responseText = ref('')
-type RunResult = {
-	temperature: number
-	choices: Array<{ index: number; text: string }>
-	usage: any
-	durationMs: number
-}
-const history = ref<
-	Array<{
-		prompt: string
-		model: string
-		temperature: number
-		maxTokens: number
-		samples: number
-		runs: RunResult[]
-		at: number
-	}>
->([])
+
+const history = ref<HistoryEntry[]>([])
 
 const nuxt = useNuxtApp()
-const db = (nuxt as any).$db as import('firebase/firestore').Firestore | undefined
+const db = (nuxt as any).$db as Firestore | undefined
 
 async function saveRecord(entry: {
 	prompt: string
 	model: string
-	temperature: number
+	temperatures: number[]
 	maxTokens: number
 	samples: number
 	runs: RunResult[]
 }) {
 	try {
 		if (!db) return
-		const { addDoc, collection, serverTimestamp } = await import('firebase/firestore')
 		await addDoc(collection(db, 'playground'), {
 			...entry,
 			createdAt: serverTimestamp(),
@@ -63,15 +51,19 @@ async function runPrompt() {
 	error.value = null
 	responseText.value = ''
 	try {
+		const body: any = {
+			prompt: prompt.value,
+			model: model.value.value,
+			maxTokens: maxTokens.value,
+			n: samples.value,
+		}
+		// Always send temperatures, default to 0.50 if none selected
+		body.temperatures = temperatureSelection.value.length
+			? temperatureSelection.value.map((t) => t.value)
+			: [0.5]
 		const res = await $fetch(`${apiBase}/chat`, {
 			method: 'POST',
-			body: {
-				prompt: prompt.value,
-				model: model.value,
-				temperature: temperature.value,
-				maxTokens: maxTokens.value,
-				n: samples.value,
-			},
+			body,
 		})
 		const data = res as any
 		const runs: RunResult[] = Array.isArray(data?.runs) ? data.runs : []
@@ -82,8 +74,8 @@ async function runPrompt() {
 			.join('\n\n')
 		const entry = {
 			prompt: prompt.value,
-			model: model.value,
-			temperature: temperature.value,
+			model: model.value.value,
+			temperatures: temperatureSelection.value.map((t) => t.value),
 			maxTokens: maxTokens.value,
 			samples: samples.value,
 			runs,
@@ -98,7 +90,7 @@ async function runPrompt() {
 	}
 }
 
-const tempPct = computed(() => Math.round(temperature.value * 100))
+// removed single temperature slider in favor of multi-select
 
 onMounted(async () => {
 	loadingModels.value = true
@@ -108,8 +100,8 @@ onMounted(async () => {
 		if (Array.isArray(list) && list.length > 0) {
 			models.value = list
 			// If current model not in list, default to first.
-			if (!list.find((m: any) => m.value === model.value)) {
-				model.value = list[0].value
+			if (!list.find((m: any) => m.value === model.value.value)) {
+				model.value = list[0]
 			}
 		}
 	} catch {
@@ -117,6 +109,14 @@ onMounted(async () => {
 		loadingModels.value = false
 	}
 })
+
+function copyText(text: string) {
+	try {
+		navigator.clipboard?.writeText(text)
+	} catch (e) {
+		console.warn('Clipboard copy failed', e)
+	}
+}
 </script>
 
 <template>
@@ -128,36 +128,49 @@ onMounted(async () => {
 				<UTextarea v-model="prompt" :rows="6" placeholder="Write your prompt here" />
 
 				<div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-					<USelect
-						v-model="model"
-						:items="models"
-						label="Model"
-						:disabled="loadingModels"
-						:loading="loadingModels"
-					/>
+					<!-- Models -->
 					<div>
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-sm">Temperature</span>
-							<span class="text-sm">{{ temperature.toFixed(2) }}</span>
+							<span class="text-sm">Model</span>
 						</div>
-						<USlider v-model="temperature" :min="0" :max="1" :step="0.05" />
-						<div class="mt-2 h-2 bg-gray-200 rounded">
-							<div class="h-full bg-pink-500 rounded" :style="{ width: tempPct + '%' }" />
-						</div>
+						<USelectMenu
+							v-model="model"
+							:items="models"
+							:disabled="loadingModels"
+							:loading="loadingModels"
+							class="w-full"
+						/>
 					</div>
+					<!-- Temperatures -->
 					<div>
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-sm">Max Tokens</span>
-							<span class="text-sm">{{ maxTokens }}</span>
+							<span class="text-sm">Temperatures</span>
+							<span class="text-xs text-gray-500">{{
+								temperatureSelection.map((t) => t.label).join(', ') || 'None'
+							}}</span>
 						</div>
-						<USlider v-model="maxTokens" :min="32" :max="1024" :step="16" />
+						<USelectMenu
+							v-model="temperatureSelection"
+							:items="temperatureOptions"
+							multiple
+							class="w-full"
+						/>
 					</div>
+					<!-- Samples -->
 					<div>
 						<div class="flex items-center justify-between mb-1">
 							<span class="text-sm">Samples</span>
 							<span class="text-sm">{{ samples }}</span>
 						</div>
 						<USlider v-model="samples" :min="1" :max="5" :step="1" />
+					</div>
+					<!-- Max Tokens -->
+					<div>
+						<div class="flex items-center justify-between mb-1">
+							<span class="text-sm">Max Tokens</span>
+							<span class="text-sm">{{ maxTokens }}</span>
+						</div>
+						<USlider v-model="maxTokens" :min="32" :max="1024" :step="16" />
 					</div>
 				</div>
 
@@ -183,11 +196,27 @@ onMounted(async () => {
 						<div class="grid gap-2">
 							<UCard v-for="c in run.choices" :key="c.index" class="bg-white">
 								<div class="text-xs text-gray-500 mb-1">Sample {{ c.index + 1 }}</div>
-								<div class="text-sm whitespace-pre-wrap">{{ c.text }}</div>
+								<div class="flex items-start justify-between gap-2">
+									<div class="text-sm whitespace-pre-wrap">{{ c.text }}</div>
+									<UButton
+										size="xs"
+										color="neutral"
+										variant="soft"
+										icon="i-heroicons-clipboard"
+										@click="copyText(c.text)"
+										>Copy</UButton
+									>
+								</div>
 							</UCard>
 						</div>
 						<div class="mt-3 text-xs text-gray-600">
-							Latency: {{ run.durationMs }} ms • Usage: {{ JSON.stringify(run.usage) }}
+							Latency: {{ run.durationMs }} ms • Tokens: Prompt
+							{{ run?.usage?.prompt_tokens ?? 0 }} • Completion
+							{{ run?.usage?.completion_tokens ?? 0 }} • Total
+							{{
+								run?.usage?.total_tokens ??
+								(run?.usage?.prompt_tokens ?? 0) + (run?.usage?.completion_tokens ?? 0)
+							}}
 						</div>
 					</UCard>
 				</div>
@@ -200,7 +229,8 @@ onMounted(async () => {
 				<UCard v-for="item in history" :key="item.at">
 					<div class="flex items-center justify-between text-sm mb-2">
 						<span>
-							Model: {{ item.model }} • Temp: {{ item.temperature.toFixed(2) }} • Samples:
+							Model: {{ item.model }} • Temps:
+							{{ item.temperatures.map((t) => t.toFixed(2)).join(', ') }} • Samples:
 							{{ item.samples }}
 						</span>
 						<span>{{ new Date(item.at).toLocaleString() }}</span>
@@ -215,12 +245,29 @@ onMounted(async () => {
 								Temperature: {{ run.temperature.toFixed(2) }} • Latency: {{ run.durationMs }} ms
 							</div>
 							<div class="grid gap-2">
-								<div v-for="c in run.choices" :key="c.index" class="text-sm whitespace-pre-wrap">
-									<span class="text-xs text-gray-500">Sample {{ c.index + 1 }}</span>
-									<div>{{ c.text }}</div>
+								<div v-for="c in run.choices" :key="c.index">
+									<div class="text-xs text-gray-500 mb-1">Sample {{ c.index + 1 }}</div>
+									<div class="flex items-start justify-between gap-2">
+										<div class="text-sm whitespace-pre-wrap">{{ c.text }}</div>
+										<UButton
+											size="xs"
+											color="neutral"
+											variant="soft"
+											icon="i-heroicons-clipboard"
+											@click="copyText(c.text)"
+											>Copy</UButton
+										>
+									</div>
 								</div>
 							</div>
-							<div class="mt-2 text-xs text-gray-600">Usage: {{ JSON.stringify(run.usage) }}</div>
+							<div class="mt-2 text-xs text-gray-600">
+								Tokens: Prompt {{ run?.usage?.prompt_tokens ?? 0 }} • Completion
+								{{ run?.usage?.completion_tokens ?? 0 }} • Total
+								{{
+									run?.usage?.total_tokens ??
+									(run?.usage?.prompt_tokens ?? 0) + (run?.usage?.completion_tokens ?? 0)
+								}}
+							</div>
 						</UCard>
 					</div>
 				</UCard>
