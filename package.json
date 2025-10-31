@@ -2,6 +2,9 @@
 	"scripts": {
 		"demo": "node cli.mjs",
 		"demo:interactive": "node cli.mjs interactive",
+		"api:dev": "node api/server.mjs",
+		"web:dev": "npm run dev --prefix web",
+		"dev": "concurrently \"npm run api:dev\" \"npm run web:dev\"",
 		"demo:chat": "node examples/chat_prompting.mjs",
 		"demo:embeddings": "node examples/embeddings.mjs",
 		"demo:tokens": "node examples/tokenization.mjs",
@@ -9,7 +12,10 @@
 	},
 	"dependencies": {
 		"@dqbd/tiktoken": "^1.0.22",
+		"concurrently": "^9.2.1",
+		"cors": "^2.8.5",
 		"dotenv": "^17.2.3",
+		"express": "^5.1.0",
 		"openai": "^6.7.0"
 	}
 }
