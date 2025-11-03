@@ -9,6 +9,7 @@ import {
 	loadTagCandidates,
 	saveTagCandidates,
 	evaluateSummary,
+	DEFAULT_MODEL,
 } from './notes-core.mjs'
 
 // Basic exponential backoff with jitter
@@ -144,7 +145,7 @@ export function registerNotesRoutes(app) {
 			if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' })
 
 			const client = new OpenAI({ apiKey })
-			const { path: relPath, text: rawText, model } = req.query || {}
+			const { path: relPath, text: rawText } = req.query || {}
 
 			let text = ''
 			if (rawText && typeof rawText === 'string') {
@@ -165,7 +166,7 @@ export function registerNotesRoutes(app) {
 			res.write(`event: start\n` + `data: {}\n\n`)
 
 			const stream = await client.chat.completions.create({
-				model: typeof model === 'string' && model ? model : undefined,
+				model: DEFAULT_MODEL,
 				temperature: 0.2,
 				max_tokens: 300,
 				messages: [

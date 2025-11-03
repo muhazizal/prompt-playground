@@ -1,8 +1,14 @@
 <script setup lang="ts">
+import { Firestore } from 'firebase/firestore'
+import { getDocs, addDoc, collection, serverTimestamp } from 'firebase/firestore'
+
 const toast = useToast()
 
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
+
+const nuxt = useNuxtApp()
+const db = (nuxt as any).$db as Firestore | undefined
 
 type Evaluation = { coverage: number; concision: number; feedback?: string }
 type NoteResult = {
@@ -189,6 +195,7 @@ async function streamSummarizeFile(name: string) {
 				description: `Error processing ${partial.file}: ${ev.data}`,
 				color: 'error',
 			})
+			es.close()
 		})
 		es.addEventListener('end', () => {
 			results.value.push(partial as NoteResult)
@@ -224,36 +231,42 @@ function copyText(text: string) {
 
 <template>
 	<UContainer class="py-8">
-		<h1 class="text-2xl font-semibold mb-6">AI Notes Assistant</h1>
+		<div class="mb-6 space-y-1">
+			<h1 class="text-2xl font-semibold">AI Notes Assistant</h1>
+			<p class="text-sm text-grey-700">
+				Summarize and tag notes from the repo's <code>notes/</code> folder.
+			</p>
+		</div>
 
 		<UCard>
-			<div class="grid gap-6">
-				<div class="flex items-center justify-between">
-					<div class="text-sm">Select notes from the repo's <code>notes/</code> folder.</div>
-					<div class="flex gap-2">
-						<UButton
-							color="neutral"
-							variant="soft"
-							:loading="loadingList"
-							icon="i-heroicons-arrow-path"
-							@click="loadList(true)"
-							>Reload</UButton
-						>
-						<UButton :loading="processing" icon="i-heroicons-sparkles" @click="processSelected"
-							>Process Selected</UButton
-						>
-						<USwitch
-							v-model="useStreaming"
-							checked-icon="i-heroicons-wifi"
-							unchecked-icon="i-heroicons-no-symbol"
-							label="Streaming"
-							description="Process notes"
-						/>
+			<div class="grid gap-10">
+				<div>
+					<div class="flex items-center justify-between mb-3">
+						<strong>Note list</strong>
+						<div class="flex gap-2">
+							<UButton
+								size="xs"
+								color="neutral"
+								variant="soft"
+								:loading="loadingList"
+								icon="i-heroicons-arrow-path"
+								@click="loadList(true)"
+								>Reload Notes</UButton
+							>
+						</div>
+					</div>
+					<div class="grid md:grid-cols-2 gap-3">
+						<UCard v-for="f in files" :key="f.name">
+							<div class="flex items-center justify-between">
+								<div class="text-sm">{{ f.name }}</div>
+								<UCheckbox :value="f.name" @change="handleChangeFiles(f.name)" />
+							</div>
+						</UCard>
 					</div>
 				</div>
 
-				<UCard>
-					<div class="flex items-center justify-between mb-2">
+				<div>
+					<div class="flex items-center justify-between mb-1">
 						<strong>Tag Set</strong>
 						<div class="flex gap-2">
 							<UButton
@@ -275,17 +288,32 @@ function copyText(text: string) {
 							>
 						</div>
 					</div>
-					<div class="text-xs text-gray-600 mb-2">Enter after typing each tag.</div>
+					<div class="text-xs text-gray-600 mb-3">Enter after typing each tag.</div>
 					<UInputTags v-model="tagsConfig" size="lg" />
-				</UCard>
+				</div>
 
-				<div class="grid md:grid-cols-2 gap-3">
-					<UCard v-for="f in files" :key="f.name">
-						<div class="flex items-center justify-between">
-							<div class="text-sm">{{ f.name }}</div>
-							<UCheckbox :value="f.name" @change="handleChangeFiles(f.name)" />
-						</div>
-					</UCard>
+				<div class="flex items-center justify-start gap-3">
+					<USwitch
+						v-model="useStreaming"
+						checked-icon="i-heroicons-wifi"
+						unchecked-icon="i-heroicons-no-symbol"
+						label="Stream Note"
+						description="Real-time result"
+					/>
+					<UButton
+						class="h-full"
+						:loading="processing"
+						icon="i-heroicons-sparkles"
+						@click="processSelected"
+						>Process Selected</UButton
+					>
+					<UButton
+						class="h-full"
+						:disabled="processing"
+						icon="i-heroicons-x-mark"
+						@click="results = []"
+						>Clear Output</UButton
+					>
 				</div>
 
 				<UAlert

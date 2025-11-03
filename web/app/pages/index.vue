@@ -190,7 +190,10 @@ function copyText(text: string) {
 
 <template>
 	<UContainer class="py-8">
-		<h1 class="text-2xl font-semibold mb-6">Prompt Playground</h1>
+		<div class="mb-6 space-y-1">
+			<h1 class="text-2xl font-semibold">Prompt Playground</h1>
+			<p class="text-sm text-grey-700">Compare prompt outputs across temperatures and samples.</p>
+		</div>
 
 		<UCard>
 			<div class="grid gap-6">
