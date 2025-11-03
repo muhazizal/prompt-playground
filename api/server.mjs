@@ -19,6 +19,7 @@ app.get('/health', (_req, res) => {
 	res.json({ ok: true })
 })
 
+// Endpoint for chat completion with temperature control
 app.post('/chat', async (req, res) => {
 	try {
 		const apiKey = process.env.OPENAI_API_KEY
@@ -47,6 +48,7 @@ app.post('/chat', async (req, res) => {
 		const runs = []
 		for (const t of tempsToRun) {
 			const started = Date.now()
+			// Run completion with current temperature
 			const completion = await client.chat.completions.create({
 				model,
 				temperature: t,
@@ -62,6 +64,7 @@ app.post('/chat', async (req, res) => {
 				index: idx,
 				text: c?.message?.content ?? '',
 			}))
+			// Add usage stats and duration
 			runs.push({ temperature: t, choices, usage: completion.usage || null, durationMs })
 		}
 

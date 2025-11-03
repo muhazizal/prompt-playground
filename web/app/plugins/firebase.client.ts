@@ -3,10 +3,12 @@ import type { FirebaseOptions } from 'firebase/app'
 import { getAuth, signInAnonymously } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
+// Helper function to check if the config is a valid FirebaseOptions object
 function isFirebaseOptions(x: unknown): x is FirebaseOptions {
 	return !!x && typeof (x as any).apiKey === 'string'
 }
 
+// Initialize Firebase client-side
 export default defineNuxtPlugin(async (nuxtApp) => {
 	const { public: pub } = useRuntimeConfig()
 	const cfgUnknown = (await (pub as any)?.firebase) as unknown
@@ -18,10 +20,12 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 		return
 	}
 
+	// Initialize Firebase app with the provided config
 	const app = initializeApp(cfgUnknown)
 	const auth = getAuth(app)
 
 	try {
+		// Sign in anonymously to Firebase
 		await signInAnonymously(auth)
 		console.log('[firebase] Anonymous auth success')
 	} catch (e: unknown) {
@@ -29,6 +33,7 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 		console.warn('[firebase] Anonymous auth failed:', msg)
 	}
 
+	// Initialize Firestore
 	const db = getFirestore(app)
 	console.log('[firebase] Firestore initialized')
 

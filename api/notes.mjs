@@ -16,6 +16,7 @@ import {
 async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
 	let attempt = 0
 
+	// Retry loop with exponential backoff
 	while (true) {
 		try {
 			return await fn()
@@ -24,6 +25,7 @@ async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
 
 			if (attempt > retries) throw err
 
+			// Add jitter to avoid thundering herd problem
 			const isRateLimited = err && (err.status === 429 || /rate limit/i.test(err.message || ''))
 			const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
 
@@ -38,6 +40,8 @@ async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
 async function processWithConcurrency(items, limit, handler) {
 	const queue = [...items]
 	const results = []
+
+	// Process items in parallel with concurrency limit
 	const workers = new Array(Math.min(limit, queue.length)).fill(0).map(async () => {
 		while (queue.length) {
 			const item = queue.shift()
@@ -55,7 +59,9 @@ async function processWithConcurrency(items, limit, handler) {
 	return results
 }
 
+// Register API routes for notes processing
 export function registerNotesRoutes(app) {
+	// List available note files
 	app.get('/notes/list', (_req, res) => {
 		try {
 			const files = listNoteFiles().map((f) => ({ name: f.name }))
@@ -65,6 +71,7 @@ export function registerNotesRoutes(app) {
 		}
 	})
 
+	// Process notes in bulk
 	app.post('/notes/process', async (req, res) => {
 		try {
 			const apiKey = process.env.OPENAI_API_KEY
@@ -74,15 +81,18 @@ export function registerNotesRoutes(app) {
 			const { paths } = req.body || {}
 			const CONCURRENCY = Number(process.env.NOTES_CONCURRENCY || 2)
 
+			// Validate and normalize input paths
 			const targets =
 				Array.isArray(paths) && paths.length > 0
 					? paths.map((p) => path.join(NOTES_DIR, path.basename(p)))
 					: listNoteFiles().map((f) => f.path)
 
+			// Process each note file in parallel with concurrency limit
 			const results = await processWithConcurrency(targets, CONCURRENCY, async (p) => {
 				const text = readNote(p)
 				if (!text) return null
 
+				// Generate summary, tags, and evaluation for the note
 				const {
 					summary,
 					tags: llmTags,
@@ -92,18 +102,20 @@ export function registerNotesRoutes(app) {
 					baseDelayMs: 500,
 				})
 
+				// Rank tags based on text content
 				const embedTags = await withRetries(() => rankTags(client, text), {
 					retries: 3,
 					baseDelayMs: 400,
 				})
 
+				// Evaluate summary quality
 				const evaluation = await withRetries(() => evaluateSummary(client, text, summary, {}), {
 					retries: 2,
 					baseDelayMs: 400,
 				})
 
+				// Combine LLM tags and ranked tags, limit to 7 tags
 				const tags = Array.from(new Set([...(llmTags || []), ...(embedTags || [])])).slice(0, 7)
-
 				return { file: path.basename(p), summary, tags, usage, evaluation }
 			})
 
@@ -113,6 +125,7 @@ export function registerNotesRoutes(app) {
 		}
 	})
 
+	// Single note summarization endpoint
 	app.post('/notes/summarize', async (req, res) => {
 		try {
 			const apiKey = process.env.OPENAI_API_KEY
@@ -123,6 +136,7 @@ export function registerNotesRoutes(app) {
 
 			if (!text || typeof text !== 'string') return res.status(400).json({ error: 'Invalid text' })
 
+			// Generate summary, tags, and evaluation for the note
 			const { summary, tags, usage } = await summarize(client, text, {})
 			const embedTags = await rankTags(client, text)
 			const evaluation = await evaluateSummary(client, text, summary, {})
@@ -147,6 +161,7 @@ export function registerNotesRoutes(app) {
 			const client = new OpenAI({ apiKey })
 			const { path: relPath, text: rawText } = req.query || {}
 
+			// Validate and normalize input text or path
 			let text = ''
 			if (rawText && typeof rawText === 'string') {
 				text = rawText
@@ -158,6 +173,7 @@ export function registerNotesRoutes(app) {
 			}
 			if (!text) return res.status(400).json({ error: 'No content to summarize' })
 
+			// SSE (Server-Sent Events): one-way text stream from server to client
 			res.setHeader('Content-Type', 'text/event-stream')
 			res.setHeader('Cache-Control', 'no-cache')
 			res.setHeader('Connection', 'keep-alive')
@@ -165,6 +181,7 @@ export function registerNotesRoutes(app) {
 
 			res.write(`event: start\n` + `data: {}\n\n`)
 
+			// Stream summary and tags from OpenAI
 			const stream = await client.chat.completions.create({
 				model: DEFAULT_MODEL,
 				temperature: 0.2,
@@ -179,6 +196,7 @@ export function registerNotesRoutes(app) {
 				stream: true,
 			})
 
+			// Accumulate summary chunks from stream
 			let buffer = ''
 			for await (const part of stream) {
 				const chunk = part?.choices?.[0]?.delta?.content || ''
@@ -188,6 +206,7 @@ export function registerNotesRoutes(app) {
 				}
 			}
 
+			// Parse final JSON response
 			let final = { summary: buffer, tags: [] }
 			try {
 				const parsed = JSON.parse(buffer)
@@ -228,6 +247,7 @@ export function registerNotesRoutes(app) {
 		}
 	})
 
+	// Update tag candidates
 	app.post('/notes/tags', (req, res) => {
 		try {
 			const { tags } = req.body || {}

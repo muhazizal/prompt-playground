@@ -3,6 +3,7 @@ import type { NavigationMenuItem } from '@nuxt/ui'
 
 const route = useRoute()
 
+// navigationItems are the items in the navigation menu.
 const items = computed<NavigationMenuItem[]>(() => [
 	{
 		label: 'Prompt Playground',

@@ -1,24 +1,19 @@
 <script setup lang="ts">
 import { Firestore } from 'firebase/firestore'
 import { getDocs, addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import type { NoteResult } from '@/helpers/types'
 
 const toast = useToast()
 
+// Runtime config
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
 
+// Init Firestore
 const nuxt = useNuxtApp()
 const db = (nuxt as any).$db as Firestore | undefined
 
-type Evaluation = { coverage: number; concision: number; feedback?: string }
-type NoteResult = {
-	file: string
-	summary: string
-	tags: string[]
-	usage?: any
-	evaluation?: Evaluation
-}
-
+// Notes state
 const files = ref<Array<{ name: string }>>([])
 const selected = ref<string[]>([])
 const results = ref<NoteResult[]>([])
@@ -32,11 +27,13 @@ const tagsConfig = ref<string[]>([])
 const tagsLoading = ref(false)
 const tagsSaving = ref(false)
 
+// Load notes on mount
 onMounted(async () => {
 	await loadList()
 	await loadTagsConfig()
 })
 
+// Load notes list
 async function loadList(refresh = false) {
 	loadingList.value = true
 	error.value = null
@@ -66,6 +63,7 @@ async function loadList(refresh = false) {
 	}
 }
 
+// Load tag configuration
 async function loadTagsConfig(refresh = false) {
 	tagsLoading.value = true
 	try {
@@ -93,9 +91,11 @@ async function loadTagsConfig(refresh = false) {
 	}
 }
 
+// Save tag configuration
 async function saveTagsConfig() {
 	tagsSaving.value = true
 	try {
+		// Validate tags
 		const clean = tagsConfig.value.map((t) => t.trim()).filter((t) => !!t)
 
 		await $fetch(`${apiBase}/notes/tags`, { method: 'POST', body: { tags: clean } })
@@ -117,6 +117,7 @@ async function saveTagsConfig() {
 	}
 }
 
+// Handle file selection
 function handleChangeFiles(name: string) {
 	if (selected.value.includes(name)) {
 		selected.value = selected.value.filter((f) => f !== name)
@@ -125,12 +126,14 @@ function handleChangeFiles(name: string) {
 	}
 }
 
+// Process selected notes
 async function processSelected() {
 	processing.value = true
 	error.value = null
 	results.value = []
 
 	try {
+		// Handle normal processing
 		if (!useStreaming.value) {
 			const res = await $fetch(`${apiBase}/notes/process`, {
 				method: 'POST',
@@ -144,6 +147,7 @@ async function processSelected() {
 				color: 'success',
 			})
 		} else {
+			// Handle streaming processing
 			await processSelectedStreaming()
 		}
 	} catch (e: any) {
@@ -158,23 +162,30 @@ async function processSelected() {
 	}
 }
 
+// Process selected notes using streaming
 async function processSelectedStreaming() {
 	for (const name of selected.value) {
 		await streamSummarizeFile(name)
 	}
 }
 
+// Stream summarize a file
 async function streamSummarizeFile(name: string) {
 	return new Promise<void>((resolve) => {
+		// Create EventSource to stream results
 		const es = new EventSource(`${apiBase}/notes/summarize-stream?path=${encodeURIComponent(name)}`)
+
+		// Initialize partial result object
 		const partial: any = { file: name, summary: '', tags: [] }
 
+		// Handle summary events
 		es.addEventListener('summary', (ev: MessageEvent) => {
 			try {
 				const data = JSON.parse(ev.data)
 				if (data?.chunk) partial.summary += data.chunk
 			} catch {}
 		})
+		// Handle result events
 		es.addEventListener('result', (ev: MessageEvent) => {
 			try {
 				const data = JSON.parse(ev.data)
@@ -182,12 +193,14 @@ async function streamSummarizeFile(name: string) {
 				partial.tags = Array.isArray(data?.tags) ? data.tags : partial.tags
 			} catch {}
 		})
+		// Handle evaluation events
 		es.addEventListener('evaluation', (ev: MessageEvent) => {
 			try {
 				const data = JSON.parse(ev.data)
 				partial.evaluation = data
 			} catch {}
 		})
+		// Handle error events
 		es.addEventListener('error', (ev: MessageEvent) => {
 			console.warn('Stream error', ev)
 			toast.add({
@@ -197,6 +210,7 @@ async function streamSummarizeFile(name: string) {
 			})
 			es.close()
 		})
+		// Handle end events
 		es.addEventListener('end', () => {
 			results.value.push(partial as NoteResult)
 			toast.add({
@@ -210,6 +224,7 @@ async function streamSummarizeFile(name: string) {
 	})
 }
 
+// Copy text to clipboard
 function copyText(text: string) {
 	try {
 		navigator.clipboard?.writeText(text)
@@ -231,6 +246,7 @@ function copyText(text: string) {
 
 <template>
 	<UContainer class="py-8">
+		<!-- Header -->
 		<div class="mb-6 space-y-1">
 			<h1 class="text-2xl font-semibold">AI Notes Assistant</h1>
 			<p class="text-sm text-grey-700">
@@ -241,6 +257,7 @@ function copyText(text: string) {
 		<UCard>
 			<div class="grid gap-10">
 				<div>
+					<!-- Note List -->
 					<div class="flex items-center justify-between mb-3">
 						<strong>Note list</strong>
 						<div class="flex gap-2">
@@ -265,6 +282,7 @@ function copyText(text: string) {
 					</div>
 				</div>
 
+				<!-- Tag Set -->
 				<div>
 					<div class="flex items-center justify-between mb-1">
 						<strong>Tag Set</strong>
@@ -292,6 +310,7 @@ function copyText(text: string) {
 					<UInputTags v-model="tagsConfig" size="lg" />
 				</div>
 
+				<!-- Action Buttons -->
 				<div class="flex items-center justify-start gap-3">
 					<USwitch
 						v-model="useStreaming"
@@ -316,6 +335,7 @@ function copyText(text: string) {
 					>
 				</div>
 
+				<!-- Error Alert -->
 				<UAlert
 					v-if="error"
 					color="error"
@@ -323,6 +343,7 @@ function copyText(text: string) {
 					:description="error"
 				/>
 
+				<!-- Processed Results -->
 				<div v-if="results.length" class="grid gap-4">
 					<UCard v-for="r in results" :key="r.file" class="bg-gray-50">
 						<div class="flex items-center justify-between mb-2">

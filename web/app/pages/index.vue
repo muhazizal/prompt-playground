@@ -7,11 +7,14 @@ import type { RunResult, HistoryEntry } from '@/helpers/types'
 
 const toast = useToast()
 
+// Runtime config
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
 
+// Model selection
 const models = ref<Array<{ label: string; value: string }>>([])
 
+// Prompt state
 const prompt = ref('Explain what temperature does in LLMs, briefly.')
 const model = ref<{ label: string; value: string }>({ label: 'gpt-4o-mini', value: 'gpt-4o-mini' })
 const maxTokens = ref(200)
@@ -24,12 +27,15 @@ const loadingModels = ref(false)
 const error = ref<string | null>(null)
 const responseText = ref('')
 
+// Output state
 const outputRunPrompt = ref<HistoryEntry>()
 const history = ref<HistoryEntry[]>([])
 
+// Init Firestore
 const nuxt = useNuxtApp()
 const db = (nuxt as any).$db as Firestore | undefined
 
+// Save a record to Firestore
 async function saveRecord(entry: {
 	prompt: string
 	model: string
@@ -41,6 +47,7 @@ async function saveRecord(entry: {
 	try {
 		if (!db) return console.warn('[save] missing db')
 
+		// Add document to Firestore collection 'playground'
 		await addDoc(collection(db, 'playground'), {
 			...entry,
 			createdAt: serverTimestamp(),
@@ -62,6 +69,7 @@ async function saveRecord(entry: {
 	}
 }
 
+// Run a prompt and save the result to Firestore
 async function runPrompt() {
 	loading.value = true
 	error.value = null
@@ -73,21 +81,27 @@ async function runPrompt() {
 			maxTokens: maxTokens.value,
 			n: samples.value,
 		}
+
 		// Always send temperatures, default to 0.50 if none selected
 		body.temperatures = temperatureSelection.value.length
 			? temperatureSelection.value.map((t) => t.value)
 			: [0.5]
+
 		const res = await $fetch(`${apiBase}/chat`, {
 			method: 'POST',
 			body,
 		})
 		const data = res as any
 		const runs: RunResult[] = Array.isArray(data?.runs) ? data.runs : []
+
+		// Format response text for display
 		responseText.value = runs
 			.flatMap((r) =>
 				r.choices.map((c) => `T=${r.temperature.toFixed(2)} [${c.index + 1}]: ${c.text}`)
 			)
 			.join('\n\n')
+
+		// Save the run result to Output, History, and Firestore
 		const entry = {
 			prompt: prompt.value,
 			model: model.value.value,
@@ -112,6 +126,7 @@ async function runPrompt() {
 	}
 }
 
+// Load available models from API
 async function handleLoadModel() {
 	loadingModels.value = true
 	try {
@@ -137,6 +152,7 @@ async function handleLoadModel() {
 	}
 }
 
+// Load history from Firestore
 async function handleLoadHistory() {
 	try {
 		if (!db) return console.warn('[save] missing db')
@@ -150,8 +166,6 @@ async function handleLoadHistory() {
 		if (Array.isArray(list) && list.length > 0) {
 			history.value = list
 		}
-
-		console.log('[load history]', list)
 	} catch (e: any) {
 		console.warn('[load history] failed:', e?.message || e)
 		toast.add({
@@ -164,11 +178,13 @@ async function handleLoadHistory() {
 	}
 }
 
+// Load models and history on mount
 onMounted(async () => {
 	await handleLoadModel()
 	await handleLoadHistory()
 })
 
+// Copy text to clipboard
 function copyText(text: string) {
 	try {
 		navigator.clipboard?.writeText(text)
@@ -190,6 +206,7 @@ function copyText(text: string) {
 
 <template>
 	<UContainer class="py-8">
+		<!-- Header -->
 		<div class="mb-6 space-y-1">
 			<h1 class="text-2xl font-semibold">Prompt Playground</h1>
 			<p class="text-sm text-grey-700">Compare prompt outputs across temperatures and samples.</p>
@@ -197,6 +214,7 @@ function copyText(text: string) {
 
 		<UCard>
 			<div class="grid gap-6">
+				<!-- Prompt Input -->
 				<UTextarea v-model="prompt" :rows="6" placeholder="Write your prompt here" />
 
 				<div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
@@ -246,11 +264,13 @@ function copyText(text: string) {
 					</div>
 				</div>
 
+				<!-- Run Prompt Button -->
 				<div class="flex gap-2">
 					<UButton :loading="loading" icon="i-heroicons-play" @click="runPrompt">Run</UButton>
 					<UButton color="neutral" variant="soft" @click="responseText = ''">Clear Output</UButton>
 				</div>
 
+				<!-- Error Alert -->
 				<UAlert
 					v-if="error"
 					color="error"
@@ -258,10 +278,12 @@ function copyText(text: string) {
 					:description="error"
 				/>
 
+				<!-- Response Output -->
 				<UCard v-if="responseText" class="bg-gray-50">
 					<pre class="whitespace-pre-wrap text-sm">{{ responseText }}</pre>
 				</UCard>
 
+				<!-- Run Output -->
 				<div v-if="outputRunPrompt?.runs?.length" class="grid gap-3">
 					<UCard v-for="run in outputRunPrompt.runs" :key="run.temperature">
 						<div class="text-sm mb-2">Temperature: {{ run.temperature.toFixed(2) }}</div>
@@ -281,6 +303,7 @@ function copyText(text: string) {
 								</div>
 							</UCard>
 						</div>
+						<!-- Run Latency and Tokens -->
 						<div class="mt-3 text-xs text-gray-600">
 							Latency: {{ run.durationMs }} ms • Tokens: Prompt
 							{{ run?.usage?.prompt_tokens ?? 0 }} • Completion
@@ -295,10 +318,12 @@ function copyText(text: string) {
 			</div>
 		</UCard>
 
+		<!-- History -->
 		<h2 class="text-xl font-semibold mt-8 mb-4">History</h2>
 		<div class="grid gap-4">
 			<div v-if="history.length > 0" class="space-y-4">
 				<UCard v-for="item in history" :key="item.at">
+					<!-- History Item Header -->
 					<div class="flex items-center justify-between text-sm mb-2">
 						<span>
 							Model: {{ item.model }} • Temps:
@@ -307,10 +332,12 @@ function copyText(text: string) {
 						</span>
 						<span>{{ new Date(item.at).toLocaleString() }}</span>
 					</div>
+					<!-- History Item Prompt -->
 					<div class="mb-3">
 						<strong>Prompt</strong>
 						<div class="text-sm whitespace-pre-wrap">{{ item.prompt }}</div>
 					</div>
+					<!-- History Item Run Output -->
 					<div v-if="item.runs?.length" class="grid gap-3">
 						<UCard v-for="run in item.runs" :key="run.temperature" class="bg-white">
 							<div class="text-xs text-gray-600 mb-2">
@@ -332,6 +359,7 @@ function copyText(text: string) {
 									</div>
 								</div>
 							</div>
+							<!-- History Item Run Latency and Tokens -->
 							<div class="mt-2 text-xs text-gray-600">
 								Tokens: Prompt {{ run?.usage?.prompt_tokens ?? 0 }} • Completion
 								{{ run?.usage?.completion_tokens ?? 0 }} • Total
