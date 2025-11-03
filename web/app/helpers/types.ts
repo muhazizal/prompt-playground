@@ -6,6 +6,7 @@ export type RunResult = {
 }
 
 export type HistoryEntry = {
+	id?: string
 	prompt: string
 	model: string
 	temperatures: number[]

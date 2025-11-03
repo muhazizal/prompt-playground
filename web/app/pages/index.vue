@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Firestore } from 'firebase/firestore'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { getDocs, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 
 import { temperatureOptions } from '@/helpers/constants'
 import type { RunResult, HistoryEntry } from '@/helpers/types'
@@ -22,6 +22,7 @@ const loadingModels = ref(false)
 const error = ref<string | null>(null)
 const responseText = ref('')
 
+const outputRunPrompt = ref<HistoryEntry>()
 const history = ref<HistoryEntry[]>([])
 
 const nuxt = useNuxtApp()
@@ -36,13 +37,16 @@ async function saveRecord(entry: {
 	runs: RunResult[]
 }) {
 	try {
-		if (!db) return
+		if (!db) return console.warn('[save] missing db')
+
 		await addDoc(collection(db, 'playground'), {
 			...entry,
 			createdAt: serverTimestamp(),
 		})
+		console.log('[save] success')
 	} catch (e: any) {
 		console.warn('[save] failed:', e?.message || e)
+		return
 	}
 }
 
@@ -81,6 +85,7 @@ async function runPrompt() {
 			runs,
 			at: Date.now(),
 		}
+		outputRunPrompt.value = entry
 		history.value.unshift(entry)
 		await saveRecord(entry)
 	} catch (e: any) {
@@ -90,15 +95,14 @@ async function runPrompt() {
 	}
 }
 
-// removed single temperature slider in favor of multi-select
-
-onMounted(async () => {
+async function handleLoadModel() {
 	loadingModels.value = true
 	try {
 		const res = await $fetch(`${apiBase}/models`)
 		const list = (res as any)?.models
 		if (Array.isArray(list) && list.length > 0) {
 			models.value = list
+
 			// If current model not in list, default to first.
 			if (!list.find((m: any) => m.value === model.value.value)) {
 				model.value = list[0]
@@ -108,6 +112,33 @@ onMounted(async () => {
 	} finally {
 		loadingModels.value = false
 	}
+}
+
+async function handleLoadHistory() {
+	try {
+		if (!db) return console.warn('[save] missing db')
+
+		const querySnapshot = await getDocs(collection(db, 'playground'))
+		const list = querySnapshot.docs.map((doc) => ({
+			id: doc.id,
+			...doc.data(),
+		})) as HistoryEntry[]
+
+		if (Array.isArray(list) && list.length > 0) {
+			history.value = list
+		}
+
+		console.log('[load history]', list)
+	} catch (e: any) {
+		console.warn('[load history] failed:', e?.message || e)
+	} finally {
+		loading.value = false
+	}
+}
+
+onMounted(async () => {
+	await handleLoadModel()
+	await handleLoadHistory()
 })
 
 function copyText(text: string) {
@@ -190,8 +221,8 @@ function copyText(text: string) {
 					<pre class="whitespace-pre-wrap text-sm">{{ responseText }}</pre>
 				</UCard>
 
-				<div v-if="history[0]?.runs?.length" class="grid gap-3">
-					<UCard v-for="run in history[0].runs" :key="run.temperature">
+				<div v-if="outputRunPrompt?.runs?.length" class="grid gap-3">
+					<UCard v-for="run in outputRunPrompt.runs" :key="run.temperature">
 						<div class="text-sm mb-2">Temperature: {{ run.temperature.toFixed(2) }}</div>
 						<div class="grid gap-2">
 							<UCard v-for="c in run.choices" :key="c.index" class="bg-white">
@@ -225,7 +256,7 @@ function copyText(text: string) {
 
 		<h2 class="text-xl font-semibold mt-8 mb-4">History</h2>
 		<div class="grid gap-4">
-			<div v-if="history.length > 0">
+			<div v-if="history.length > 0" class="space-y-4">
 				<UCard v-for="item in history" :key="item.at">
 					<div class="flex items-center justify-between text-sm mb-2">
 						<span>
