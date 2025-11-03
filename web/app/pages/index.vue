@@ -101,7 +101,7 @@ async function runPrompt() {
 			)
 			.join('\n\n')
 
-		// Save the run result to Output, History, and Firestore
+		// Save the run result to Output and Firestore
 		const entry = {
 			prompt: prompt.value,
 			model: model.value.value,
@@ -112,7 +112,6 @@ async function runPrompt() {
 			at: Date.now(),
 		}
 		outputRunPrompt.value = entry
-		history.value.unshift(entry)
 		await saveRecord(entry)
 	} catch (e: any) {
 		error.value = e?.data?.error || e?.message || 'Request failed'
@@ -319,61 +318,73 @@ function copyText(text: string) {
 		</UCard>
 
 		<!-- History -->
-		<h2 class="text-xl font-semibold mt-8 mb-4">History</h2>
-		<div class="grid gap-4">
-			<div v-if="history.length > 0" class="space-y-4">
-				<UCard v-for="item in history" :key="item.at">
-					<!-- History Item Header -->
-					<div class="flex items-center justify-between text-sm mb-2">
-						<span>
-							Model: {{ item.model }} • Temps:
-							{{ item.temperatures.map((t) => t.toFixed(2)).join(', ') }} • Samples:
-							{{ item.samples }}
-						</span>
-						<span>{{ new Date(item.at).toLocaleString() }}</span>
-					</div>
-					<!-- History Item Prompt -->
-					<div class="mb-3">
-						<strong>Prompt</strong>
-						<div class="text-sm whitespace-pre-wrap">{{ item.prompt }}</div>
-					</div>
-					<!-- History Item Run Output -->
-					<div v-if="item.runs?.length" class="grid gap-3">
-						<UCard v-for="run in item.runs" :key="run.temperature" class="bg-white">
-							<div class="text-xs text-gray-600 mb-2">
-								Temperature: {{ run.temperature.toFixed(2) }} • Latency: {{ run.durationMs }} ms
-							</div>
-							<div class="grid gap-2">
-								<div v-for="c in run.choices" :key="c.index">
-									<div class="text-xs text-gray-500 mb-1">Sample {{ c.index + 1 }}</div>
-									<div class="flex items-start justify-between gap-2">
-										<div class="text-sm whitespace-pre-wrap">{{ c.text }}</div>
-										<UButton
-											size="xs"
-											color="neutral"
-											variant="soft"
-											icon="i-heroicons-clipboard"
-											@click="copyText(c.text)"
-											>Copy</UButton
-										>
+		<div class="mt-6">
+			<div class="flex items-center justify-between mb-1">
+				<strong>Prompt History</strong>
+				<UButton
+					size="xs"
+					color="neutral"
+					variant="soft"
+					icon="i-heroicons-arrow-path"
+					@click="handleLoadHistory()"
+					>Reload History</UButton
+				>
+			</div>
+			<div class="grid gap-3">
+				<div v-if="history.length > 0" class="space-y-3 mt-2">
+					<UCard v-for="item in history" :key="item.at">
+						<!-- History Item Header -->
+						<div class="flex items-center justify-between text-sm mb-2">
+							<span>
+								Model: {{ item.model }} • Temps:
+								{{ item.temperatures.map((t) => t.toFixed(2)).join(', ') }} • Samples:
+								{{ item.samples }}
+							</span>
+							<span>{{ new Date(item.at).toLocaleString() }}</span>
+						</div>
+						<!-- History Item Prompt -->
+						<div class="mb-3">
+							<strong>Prompt</strong>
+							<div class="text-sm whitespace-pre-wrap">{{ item.prompt }}</div>
+						</div>
+						<!-- History Item Run Output -->
+						<div v-if="item.runs?.length" class="grid gap-3">
+							<UCard v-for="run in item.runs" :key="run.temperature" class="bg-white">
+								<div class="text-xs text-gray-600 mb-2">
+									Temperature: {{ run.temperature.toFixed(2) }} • Latency: {{ run.durationMs }} ms
+								</div>
+								<div class="grid gap-2">
+									<div v-for="c in run.choices" :key="c.index">
+										<div class="text-xs text-gray-500 mb-1">Sample {{ c.index + 1 }}</div>
+										<div class="flex items-start justify-between gap-2">
+											<div class="text-sm whitespace-pre-wrap">{{ c.text }}</div>
+											<UButton
+												size="xs"
+												color="neutral"
+												variant="soft"
+												icon="i-heroicons-clipboard"
+												@click="copyText(c.text)"
+												>Copy</UButton
+											>
+										</div>
 									</div>
 								</div>
-							</div>
-							<!-- History Item Run Latency and Tokens -->
-							<div class="mt-2 text-xs text-gray-600">
-								Tokens: Prompt {{ run?.usage?.prompt_tokens ?? 0 }} • Completion
-								{{ run?.usage?.completion_tokens ?? 0 }} • Total
-								{{
-									run?.usage?.total_tokens ??
-									(run?.usage?.prompt_tokens ?? 0) + (run?.usage?.completion_tokens ?? 0)
-								}}
-							</div>
-						</UCard>
-					</div>
-				</UCard>
-			</div>
-			<div v-else>
-				<p class="text-sm text-gray-500">No history available.</p>
+								<!-- History Item Run Latency and Tokens -->
+								<div class="mt-2 text-xs text-gray-600">
+									Tokens: Prompt {{ run?.usage?.prompt_tokens ?? 0 }} • Completion
+									{{ run?.usage?.completion_tokens ?? 0 }} • Total
+									{{
+										run?.usage?.total_tokens ??
+										(run?.usage?.prompt_tokens ?? 0) + (run?.usage?.completion_tokens ?? 0)
+									}}
+								</div>
+							</UCard>
+						</div>
+					</UCard>
+				</div>
+				<div v-else>
+					<p class="text-sm text-gray-500">No history available.</p>
+				</div>
 			</div>
 		</div>
 	</UContainer>

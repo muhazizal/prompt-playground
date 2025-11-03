@@ -194,15 +194,20 @@ export function registerNotesRoutes(app) {
 					},
 				],
 				stream: true,
+				stream_options: { include_usage: true },
 			})
 
 			// Accumulate summary chunks from stream
 			let buffer = ''
+			let usage = null
 			for await (const part of stream) {
 				const chunk = part?.choices?.[0]?.delta?.content || ''
 				if (chunk) {
 					buffer += chunk
 					res.write(`event: summary\n` + `data: ${JSON.stringify({ chunk })}\n\n`)
+				}
+				if (part?.usage) {
+					usage = part.usage
 				}
 			}
 
@@ -218,6 +223,9 @@ export function registerNotesRoutes(app) {
 			final.tags = Array.from(new Set([...(final.tags || []), ...embedTags])).slice(0, 7)
 
 			res.write(`event: result\n` + `data: ${JSON.stringify(final)}\n\n`)
+			if (usage) {
+				res.write(`event: usage\n` + `data: ${JSON.stringify(usage)}\n\n`)
+			}
 
 			// Send evaluation after the result
 			try {
@@ -230,7 +238,8 @@ export function registerNotesRoutes(app) {
 		} catch (err) {
 			try {
 				res.write(
-					`event: error\n` + `data: ${JSON.stringify({ error: err?.message || String(err) })}\n\n`
+					`event: server_error\n` +
+						`data: ${JSON.stringify({ error: err?.message || String(err) })}\n\n`
 				)
 				res.end()
 			} catch {}

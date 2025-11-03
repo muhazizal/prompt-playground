@@ -122,7 +122,10 @@ async function getTextEmbedding(client, text) {
 	const key = sha1(text)
 
 	// Check cache first
-	if (textEmbeddingCache.has(key)) return textEmbeddingCache.get(key)
+	if (textEmbeddingCache.has(key)) {
+		console.log(`[embeddings] text hit (mem) key=${key}`)
+		return textEmbeddingCache.get(key)
+	}
 
 	// Get embedding from OpenAI if not cached
 	const res = await client.embeddings.create({ model: EMBEDDING_MODEL, input: text })
@@ -133,6 +136,7 @@ async function getTextEmbedding(client, text) {
 	embedDiskCache.text[key] = vec
 
 	scheduleSaveEmbeddingsCache()
+	console.log(`[embeddings] text miss -> computed and cached key=${key}`)
 
 	return vec
 }
@@ -142,12 +146,16 @@ async function getTagEmbedding(client, tag) {
 	loadEmbeddingsCacheFromDisk()
 
 	// Check cache first
-	if (tagEmbeddingsCache.has(tag)) return tagEmbeddingsCache.get(tag)
+	if (tagEmbeddingsCache.has(tag)) {
+		console.log(`[embeddings] tag hit (mem) tag="${tag}"`)
+		return tagEmbeddingsCache.get(tag)
+	}
 
 	// Check disk cache next
 	if (embedDiskCache.tags[tag]) {
 		const vec = embedDiskCache.tags[tag]
 		tagEmbeddingsCache.set(tag, vec)
+		console.log(`[embeddings] tag hit (disk) tag="${tag}"`)
 
 		return vec
 	}
@@ -161,6 +169,7 @@ async function getTagEmbedding(client, tag) {
 	embedDiskCache.tags[tag] = vec
 
 	scheduleSaveEmbeddingsCache()
+	console.log(`[embeddings] tag miss -> computed and cached tag="${tag}"`)
 
 	return vec
 }
@@ -275,18 +284,19 @@ export async function evaluateSummary(client, text, summary, { model = DEFAULT_M
 			{
 				role: 'system',
 				content:
-					'You are an evaluator that grades summaries for coverage and concision. Return strict JSON.',
+					'You are an evaluator that grades summaries for coverage, concision, formatting, and factuality. Return strict JSON only.',
 			},
 			{
 				role: 'user',
-				content: `Evaluate the following summary against the original note.\n
-Original note:\n${text}\n\nSummary:\n${summary}\n\nReturn JSON with {"coverage": number (0-1), "concision": number (0-1), "feedback": string}.`,
+				content: `Evaluate the following summary against the original note.\n\nOriginal note:\n${text}\n\nSummary:\n${summary}\n\nReturn JSON with {"coverage": number (0-1), "concision": number (0-1), "formatting": number (0-1), "factuality": number (0-1), "feedback": string}.\n- coverage: Does the summary capture key points.\n- concision: Is the summary succinct without losing meaning.\n- formatting: Is the output well-structured (3-5 sentences, readable).\n- factuality: Does the summary avoid introducing facts not present in the note.`,
 			},
 		],
 	})
 	const raw = completion?.choices?.[0]?.message?.content || ''
 	let coverage = 0.0,
 		concision = 0.0,
+		formatting = 0.0,
+		factuality = 0.0,
 		feedback = ''
 
 	try {
@@ -297,6 +307,10 @@ Original note:\n${text}\n\nSummary:\n${summary}\n\nReturn JSON with {"coverage":
 			typeof parsed.coverage === 'number' ? Math.max(0, Math.min(1, parsed.coverage)) : coverage
 		concision =
 			typeof parsed.concision === 'number' ? Math.max(0, Math.min(1, parsed.concision)) : concision
+		formatting =
+			typeof parsed.formatting === 'number' ? Math.max(0, Math.min(1, parsed.formatting)) : formatting
+		factuality =
+			typeof parsed.factuality === 'number' ? Math.max(0, Math.min(1, parsed.factuality)) : factuality
 		feedback = typeof parsed.feedback === 'string' ? parsed.feedback : feedback
 	} catch {
 		// Fallback heuristic if JSON parsing fails
@@ -306,8 +320,13 @@ Original note:\n${text}\n\nSummary:\n${summary}\n\nReturn JSON with {"coverage":
 
 		coverage = Math.max(0.2, Math.min(1, ratio * 1.2))
 		concision = Math.max(0.2, Math.min(1, 1 - ratio * 0.5))
+		// Simple formatting heuristic based on sentence count
+		const sentences = (summary.match(/[.!?]\s/g) || []).length + (summary.endsWith('.') ? 1 : 0)
+		formatting = Math.max(0.2, Math.min(1, sentences >= 2 && sentences <= 8 ? 0.8 : 0.4))
+		// Factuality is difficult to assess heuristically; set neutral baseline
+		factuality = 0.5
 		feedback = 'Heuristic evaluation applied due to parsing failure.'
 	}
 
-	return { coverage, concision, feedback, usage: completion?.usage || null }
+	return { coverage, concision, formatting, factuality, feedback, usage: completion?.usage || null }
 }

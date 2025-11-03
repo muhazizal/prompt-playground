@@ -19,7 +19,13 @@ export type HistoryEntry = {
 }
 
 // Evaluation is the result of evaluating a note.
-export type Evaluation = { coverage: number; concision: number; feedback?: string }
+export type Evaluation = {
+	coverage: number
+	concision: number
+	formatting?: number
+	factuality?: number
+	feedback?: string
+}
 
 // NoteResult is the result of processing a note.
 export type NoteResult = {

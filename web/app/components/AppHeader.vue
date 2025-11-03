@@ -11,7 +11,7 @@ const items = computed<NavigationMenuItem[]>(() => [
 		active: route.path === '/',
 	},
 	{
-		label: 'AI Notes Assistant',
+		label: 'Notes Assistant',
 		to: '/notes',
 		active: route.path === '/notes',
 	},

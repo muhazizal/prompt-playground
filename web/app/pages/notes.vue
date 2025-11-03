@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Firestore } from 'firebase/firestore'
-import { getDocs, addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { getDocs, setDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
 import type { NoteResult } from '@/helpers/types'
 
 const toast = useToast()
@@ -17,10 +17,12 @@ const db = (nuxt as any).$db as Firestore | undefined
 const files = ref<Array<{ name: string }>>([])
 const selected = ref<string[]>([])
 const results = ref<NoteResult[]>([])
+const history = ref<NoteResult[]>([])
 const loadingList = ref(false)
 const processing = ref(false)
 const error = ref<string | null>(null)
 const useStreaming = ref(false)
+const loadingHistory = ref(false)
 
 // Tag configuration
 const tagsConfig = ref<string[]>([])
@@ -31,6 +33,7 @@ const tagsSaving = ref(false)
 onMounted(async () => {
 	await loadList()
 	await loadTagsConfig()
+	await loadSummaryHistory()
 })
 
 // Load notes list
@@ -141,6 +144,15 @@ async function processSelected() {
 			})
 
 			results.value = ((res as any)?.results || []) as NoteResult[]
+
+			// Save each successful summary to Firestore (unique by file name)
+			for (const r of results.value) {
+				await saveSummaryRecord(r)
+			}
+
+			// Refresh summary history after saving
+			await loadSummaryHistory()
+
 			toast.add({
 				title: 'Notes processed',
 				description: `Processed ${results.value.length} notes`,
@@ -178,6 +190,14 @@ async function streamSummarizeFile(name: string) {
 		// Initialize partial result object
 		const partial: any = { file: name, summary: '', tags: [] }
 
+		// Track completion to avoid treating normal close as an error
+		let completed = false
+
+		// Debug: connection opened
+		es.addEventListener('open', () => {
+			console.log('Stream opened for', partial.file)
+		})
+
 		// Handle summary events
 		es.addEventListener('summary', (ev: MessageEvent) => {
 			try {
@@ -200,19 +220,53 @@ async function streamSummarizeFile(name: string) {
 				partial.evaluation = data
 			} catch {}
 		})
-		// Handle error events
-		es.addEventListener('error', (ev: MessageEvent) => {
-			console.warn('Stream error', ev)
+		// Handle usage events
+		es.addEventListener('usage', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data)
+				partial.usage = data
+			} catch {}
+		})
+		// Handle server-sent error events (from API)
+		es.addEventListener('server_error', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data)
+				toast.add({
+					title: 'Failed to process note',
+					description: `Error processing ${partial.file}: ${data?.error || 'Unknown error'}`,
+					color: 'error',
+				})
+			} catch {
+				toast.add({
+					title: 'Failed to process note',
+					description: `Error processing ${partial.file}: server error`,
+					color: 'error',
+				})
+			}
+			es.close()
+		})
+		// Handle network errors from EventSource (ignore if stream already completed)
+		es.addEventListener('error', (_ev: MessageEvent) => {
+			if (completed) {
+				es.close()
+				return
+			}
+			console.warn('Stream connection error for', partial.file)
 			toast.add({
-				title: 'Failed to process note',
-				description: `Error processing ${partial.file}: ${ev.data}`,
+				title: 'Stream connection error',
+				description: `Could not connect: ${partial.file}`,
 				color: 'error',
 			})
 			es.close()
 		})
 		// Handle end events
-		es.addEventListener('end', () => {
+		es.addEventListener('end', async () => {
+			completed = true
 			results.value.push(partial as NoteResult)
+
+			// Save successful streaming result to Firestore (unique by file name)
+			await saveSummaryRecord(partial as NoteResult)
+
 			toast.add({
 				title: 'Note processed',
 				description: `Processed ${partial.file}`,
@@ -222,6 +276,60 @@ async function streamSummarizeFile(name: string) {
 			resolve()
 		})
 	})
+}
+
+// Save summary to Firestore with unique doc id per file name
+async function saveSummaryRecord(r: NoteResult) {
+	try {
+		if (!db) return console.warn('[save] missing db')
+
+		const ref = doc(db, 'summaries', r.file)
+		const payload = {
+			file: r.file,
+			summary: r.summary,
+			tags: r.tags || [],
+			usage: r.usage || null,
+			evaluation: r.evaluation || null,
+			updatedAt: serverTimestamp(),
+		}
+
+		// Use setDoc to override existing doc by file name (unique constraint)
+		await setDoc(ref, payload, { merge: true })
+	} catch (e: any) {
+		console.warn('[save] failed:', e?.message || e)
+		toast.add({
+			title: 'Failed to save summary',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
+	}
+}
+
+// Load saved summary histories from Firestore
+async function loadSummaryHistory() {
+	loadingHistory.value = true
+	try {
+		if (!db) return console.warn('[history] missing db')
+
+		const querySnapshot = await getDocs(collection(db, 'summaries'))
+		const list: NoteResult[] = querySnapshot.docs.map((doc) => {
+			const data = doc.data() as any
+			const file = typeof data?.file === 'string' && data.file.length > 0 ? data.file : doc.id
+			const summary = typeof data?.summary === 'string' ? data.summary : ''
+			const tags = Array.isArray(data?.tags)
+				? data.tags.filter((t: any) => typeof t === 'string')
+				: []
+			const usage = data?.usage ?? null
+			const evaluation = data?.evaluation ?? null
+			return { file, summary, tags, usage, evaluation } as NoteResult
+		})
+
+		history.value = Array.isArray(list) ? list : []
+	} catch (e: any) {
+		console.warn('[history] failed:', e?.message || e)
+	} finally {
+		loadingHistory.value = false
+	}
 }
 
 // Copy text to clipboard
@@ -248,7 +356,7 @@ function copyText(text: string) {
 	<UContainer class="py-8">
 		<!-- Header -->
 		<div class="mb-6 space-y-1">
-			<h1 class="text-2xl font-semibold">AI Notes Assistant</h1>
+			<h1 class="text-2xl font-semibold">Notes Assistant</h1>
 			<p class="text-sm text-grey-700">
 				Summarize and tag notes from the repo's <code>notes/</code> folder.
 			</p>
@@ -258,7 +366,7 @@ function copyText(text: string) {
 			<div class="grid gap-10">
 				<div>
 					<!-- Note List -->
-					<div class="flex items-center justify-between mb-3">
+					<div class="flex items-center justify-between mb-1">
 						<strong>Note list</strong>
 						<div class="flex gap-2">
 							<UButton
@@ -272,6 +380,7 @@ function copyText(text: string) {
 							>
 						</div>
 					</div>
+					<div class="text-xs text-gray-600 mb-3">Select notes to process.</div>
 					<div class="grid md:grid-cols-2 gap-3">
 						<UCard v-for="f in files" :key="f.name">
 							<div class="flex items-center justify-between">
@@ -363,7 +472,9 @@ function copyText(text: string) {
 						</div>
 						<div v-if="r.evaluation" class="mt-2 text-xs text-gray-700">
 							Coverage {{ (r.evaluation.coverage * 100).toFixed(0) }}% • Concision
-							{{ (r.evaluation.concision * 100).toFixed(0) }}%
+							{{ (r.evaluation.concision * 100).toFixed(0) }}% • Formatting
+							{{ ((r.evaluation.formatting ?? 0) * 100).toFixed(0) }}% • Factuality
+							{{ ((r.evaluation.factuality ?? 0) * 100).toFixed(0) }}%
 							<div v-if="r.evaluation.feedback" class="mt-1">{{ r.evaluation.feedback }}</div>
 						</div>
 						<div v-if="r.usage" class="mt-2 text-xs text-gray-600">
@@ -378,5 +489,47 @@ function copyText(text: string) {
 				</div>
 			</div>
 		</UCard>
+
+		<!-- Summary History -->
+		<div class="mt-6">
+			<div class="flex items-center justify-between mb-1">
+				<strong>Summary History</strong>
+				<UButton
+					size="xs"
+					color="neutral"
+					variant="soft"
+					icon="i-heroicons-arrow-path"
+					:loading="loadingHistory"
+					@click="loadSummaryHistory()"
+					>Reload History</UButton
+				>
+			</div>
+			<div v-if="history.length" class="grid gap-3 mt-2">
+				<UCard v-for="h in history" :key="h.file">
+					<div class="flex items-center justify-between mb-1">
+						<strong>{{ h.file }}</strong>
+						<div class="text-xs text-gray-500">
+							Tokens: Prompt {{ h?.usage?.prompt_tokens ?? 0 }} • Completion
+							{{ h?.usage?.completion_tokens ?? 0 }} • Total
+							{{
+								h?.usage?.total_tokens ??
+								(h?.usage?.prompt_tokens ?? 0) + (h?.usage?.completion_tokens ?? 0)
+							}}
+						</div>
+					</div>
+					<div class="text-sm line-clamp-4">{{ h.summary }}</div>
+					<div class="mt-2 flex flex-wrap gap-2">
+						<UBadge v-for="t in h.tags" :key="t" color="primary" variant="soft">{{ t }}</UBadge>
+					</div>
+					<div v-if="h.evaluation" class="mt-2 text-xs text-gray-700">
+						Coverage {{ (h.evaluation.coverage * 100).toFixed(0) }}% • Concision
+						{{ (h.evaluation.concision * 100).toFixed(0) }}% • Formatting
+						{{ ((h.evaluation.formatting ?? 0) * 100).toFixed(0) }}% • Factuality
+						{{ ((h.evaluation.factuality ?? 0) * 100).toFixed(0) }}%
+					</div>
+				</UCard>
+			</div>
+			<div v-else class="text-xs text-gray-500">No history available.</div>
+		</div>
 	</UContainer>
 </template>
