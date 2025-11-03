@@ -1,12 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import OpenAI from 'openai'
+import crypto from 'crypto'
 
 export const NOTES_DIR = path.resolve(process.cwd(), 'notes')
 export const DEFAULT_MODEL = 'gpt-4o-mini'
 export const EMBEDDING_MODEL = 'text-embedding-3-small'
 
-export const TAG_CANDIDATES = [
+export const DEFAULT_TAGS = [
 	'LLM Basics',
 	'Prompt Design',
 	'Embeddings',
@@ -19,8 +20,62 @@ export const TAG_CANDIDATES = [
 	'OpenAI SDK',
 ]
 
+// Config and cache locations
+export const CONFIG_DIR = path.resolve(process.cwd(), 'config')
+export const TAGS_JSON = path.join(CONFIG_DIR, 'tags.json')
+export const CACHE_DIR = path.resolve(process.cwd(), 'cache')
+export const EMBED_CACHE_FILE = path.join(CACHE_DIR, 'embeddings.json')
+
+// In-memory caches
 const tagEmbeddingsCache = new Map() // Map<tag, embeddingVector>
 const textEmbeddingCache = new Map() // Map<hash(text), embeddingVector>
+let embedDiskCacheLoaded = false
+let embedDiskCache = { text: {}, tags: {} }
+
+function ensureDirs() {
+	if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true })
+	if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true })
+}
+
+function loadEmbeddingsCacheFromDisk() {
+	ensureDirs()
+
+	if (embedDiskCacheLoaded) return
+
+	if (fs.existsSync(EMBED_CACHE_FILE)) {
+		try {
+			const raw = fs.readFileSync(EMBED_CACHE_FILE, 'utf-8')
+			const parsed = JSON.parse(raw)
+
+			embedDiskCache = {
+				text: parsed?.text && typeof parsed.text === 'object' ? parsed.text : {},
+				tags: parsed?.tags && typeof parsed.tags === 'object' ? parsed.tags : {},
+			}
+
+			// Warm in-memory text cache
+			for (const [k, v] of Object.entries(embedDiskCache.text)) {
+				if (!textEmbeddingCache.has(k)) textEmbeddingCache.set(k, v)
+			}
+
+			embedDiskCacheLoaded = true
+		} catch {}
+	} else {
+		embedDiskCacheLoaded = true
+	}
+}
+
+let saveTimer = null
+function scheduleSaveEmbeddingsCache() {
+	if (saveTimer) return
+
+	saveTimer = setTimeout(() => {
+		try {
+			fs.writeFileSync(EMBED_CACHE_FILE, JSON.stringify(embedDiskCache), 'utf-8')
+		} catch {}
+
+		saveTimer = null
+	}, 200)
+}
 
 export function getClient(apiKey) {
 	if (!apiKey) throw new Error('Missing OPENAI_API_KEY')
@@ -50,10 +105,11 @@ export function readNote(filePath) {
 }
 
 function sha1(str) {
-	return Buffer.from(require('crypto').createHash('sha1').update(str).digest('hex')).toString()
+	return crypto.createHash('sha1').update(str).digest('hex')
 }
 
-async function getEmbedding(client, text) {
+async function getTextEmbedding(client, text) {
+	loadEmbeddingsCacheFromDisk()
 	const key = sha1(text)
 
 	if (textEmbeddingCache.has(key)) return textEmbeddingCache.get(key)
@@ -62,30 +118,72 @@ async function getEmbedding(client, text) {
 	const vec = res?.data?.[0]?.embedding || []
 
 	textEmbeddingCache.set(key, vec)
+	embedDiskCache.text[key] = vec
+
+	scheduleSaveEmbeddingsCache()
 
 	return vec
 }
 
-async function ensureTagEmbeddings(client) {
-	if (tagEmbeddingsCache.size === TAG_CANDIDATES.length) return
+async function getTagEmbedding(client, tag) {
+	loadEmbeddingsCacheFromDisk()
 
-	for (const tag of TAG_CANDIDATES) {
-		if (!tagEmbeddingsCache.has(tag)) {
-			const res = await client.embeddings.create({ model: EMBEDDING_MODEL, input: tag })
-			tagEmbeddingsCache.set(tag, res?.data?.[0]?.embedding || [])
-		}
+	if (tagEmbeddingsCache.has(tag)) return tagEmbeddingsCache.get(tag)
+
+	if (embedDiskCache.tags[tag]) {
+		const vec = embedDiskCache.tags[tag]
+		tagEmbeddingsCache.set(tag, vec)
+
+		return vec
 	}
+
+	const res = await client.embeddings.create({ model: EMBEDDING_MODEL, input: tag })
+	const vec = res?.data?.[0]?.embedding || []
+
+	tagEmbeddingsCache.set(tag, vec)
+	embedDiskCache.tags[tag] = vec
+
+	scheduleSaveEmbeddingsCache()
+
+	return vec
+}
+
+export function loadTagCandidates() {
+	ensureDirs()
+
+	try {
+		if (fs.existsSync(TAGS_JSON)) {
+			const raw = fs.readFileSync(TAGS_JSON, 'utf-8')
+			const arr = JSON.parse(raw)
+
+			if (Array.isArray(arr) && arr.every((t) => typeof t === 'string')) return arr
+		}
+	} catch {}
+
+	return DEFAULT_TAGS
+}
+
+export function saveTagCandidates(tags = []) {
+	ensureDirs()
+
+	const clean = Array.isArray(tags)
+		? tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim())
+		: []
+
+	fs.writeFileSync(TAGS_JSON, JSON.stringify(clean, null, 2), 'utf-8')
 }
 
 function cosineSimilarity(a = [], b = []) {
 	let dot = 0,
 		na = 0,
 		nb = 0
+
 	for (let i = 0; i < Math.min(a.length, b.length); i++) {
 		dot += a[i] * b[i]
 		na += a[i] * a[i]
 		nb += b[i] * b[i]
 	}
+
 	return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1)
 }
 
@@ -118,14 +216,64 @@ Note:\n\n${text}`,
 }
 
 export async function rankTags(client, text) {
-	await ensureTagEmbeddings(client)
-	const vec = await getEmbedding(client, text)
-	const ranked = TAG_CANDIDATES.map((t) => ({
-		tag: t,
-		score: cosineSimilarity(vec, tagEmbeddingsCache.get(t)),
-	}))
+	const TAGS = loadTagCandidates()
+	const vec = await getTextEmbedding(client, text)
+	const scored = await Promise.all(
+		TAGS.map(async (t) => {
+			const te = await getTagEmbedding(client, t)
+			return { tag: t, score: cosineSimilarity(vec, te) }
+		})
+	)
+	const ranked = scored
 		.sort((a, b) => b.score - a.score)
 		.slice(0, 5)
 		.map((r) => r.tag)
 	return ranked
+}
+
+export async function evaluateSummary(client, text, summary, { model = DEFAULT_MODEL } = {}) {
+	const completion = await client.chat.completions.create({
+		model,
+		temperature: 0,
+		max_tokens: 200,
+		messages: [
+			{
+				role: 'system',
+				content:
+					'You are an evaluator that grades summaries for coverage and concision. Return strict JSON.',
+			},
+			{
+				role: 'user',
+				content: `Evaluate the following summary against the original note.\n
+Original note:\n${text}\n\nSummary:\n${summary}\n\nReturn JSON with {"coverage": number (0-1), "concision": number (0-1), "feedback": string}.`,
+			},
+		],
+	})
+	const raw = completion?.choices?.[0]?.message?.content || ''
+	let coverage = 0.0,
+		concision = 0.0,
+		feedback = ''
+
+	try {
+		const parsed = JSON.parse(raw)
+
+		coverage =
+			typeof parsed.coverage === 'number' ? Math.max(0, Math.min(1, parsed.coverage)) : coverage
+
+		concision =
+			typeof parsed.concision === 'number' ? Math.max(0, Math.min(1, parsed.concision)) : concision
+
+		feedback = typeof parsed.feedback === 'string' ? parsed.feedback : feedback
+	} catch {
+		// Fallback heuristic if JSON parsing fails
+		const lenNote = text.length || 1
+		const lenSum = summary.length || 1
+		const ratio = Math.min(1, lenSum / lenNote)
+
+		coverage = Math.max(0.2, Math.min(1, ratio * 1.2))
+		concision = Math.max(0.2, Math.min(1, 1 - ratio * 0.5))
+		feedback = 'Heuristic evaluation applied due to parsing failure.'
+	}
+
+	return { coverage, concision, feedback, usage: completion?.usage || null }
 }
