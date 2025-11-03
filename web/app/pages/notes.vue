@@ -29,6 +29,25 @@ const tagsConfig = ref<string[]>([])
 const tagsLoading = ref(false)
 const tagsSaving = ref(false)
 
+// Simple price table (USD per 1M tokens) for cost estimation.
+// Note: Values are estimates; verify against current vendor pricing.
+const PRICE_PER_MILLION: Record<string, { input: number; output: number }> = {
+	'gpt-4o-mini': { input: 0.15, output: 0.6 },
+	'gpt-4o': { input: 5.0, output: 15.0 },
+}
+
+function estimateCost(usage: any, model?: string | null) {
+	if (!usage || !model) return null
+	const price = PRICE_PER_MILLION[model]
+	if (!price) return null
+	const promptTokens = Number(usage?.prompt_tokens ?? 0)
+	const completionTokens = Number(usage?.completion_tokens ?? 0)
+	const cost =
+		(promptTokens / 1_000_000) * price.input + (completionTokens / 1_000_000) * price.output
+	// Round to 4 decimal places for display
+	return Math.round(cost * 10000) / 10000
+}
+
 // Load notes on mount
 onMounted(async () => {
 	await loadList()
@@ -211,6 +230,7 @@ async function streamSummarizeFile(name: string) {
 				const data = JSON.parse(ev.data)
 				partial.summary = data?.summary || partial.summary
 				partial.tags = Array.isArray(data?.tags) ? data.tags : partial.tags
+				if (typeof data?.model === 'string') partial.model = data.model
 			} catch {}
 		})
 		// Handle evaluation events
@@ -290,6 +310,7 @@ async function saveSummaryRecord(r: NoteResult) {
 			tags: r.tags || [],
 			usage: r.usage || null,
 			evaluation: r.evaluation || null,
+			model: r.model || null,
 			updatedAt: serverTimestamp(),
 		}
 
@@ -321,7 +342,8 @@ async function loadSummaryHistory() {
 				: []
 			const usage = data?.usage ?? null
 			const evaluation = data?.evaluation ?? null
-			return { file, summary, tags, usage, evaluation } as NoteResult
+			const model = typeof data?.model === 'string' ? data.model : undefined
+			return { file, summary, tags, usage, evaluation, model } as NoteResult
 		})
 
 		history.value = Array.isArray(list) ? list : []
@@ -484,6 +506,19 @@ function copyText(text: string) {
 								r?.usage?.total_tokens ??
 								(r?.usage?.prompt_tokens ?? 0) + (r?.usage?.completion_tokens ?? 0)
 							}}
+							<div class="mt-1 flex items-center gap-2">
+								<UBadge size="xs" color="neutral" variant="soft"
+									>Model {{ r.model ?? 'gpt-4o-mini' }}</UBadge
+								>
+								<UBadge
+									v-if="estimateCost(r.usage, r.model) !== null"
+									size="xs"
+									color="primary"
+									variant="soft"
+								>
+									Cost est. ${{ estimateCost(r.usage, r.model) }}
+								</UBadge>
+							</div>
 						</div>
 					</UCard>
 				</div>
@@ -516,6 +551,19 @@ function copyText(text: string) {
 								(h?.usage?.prompt_tokens ?? 0) + (h?.usage?.completion_tokens ?? 0)
 							}}
 						</div>
+					</div>
+					<div class="mt-1 flex items-center gap-2">
+						<UBadge size="xs" color="neutral" variant="soft"
+							>Model {{ h.model ?? 'gpt-4o-mini' }}</UBadge
+						>
+						<UBadge
+							v-if="estimateCost(h.usage, h.model) !== null"
+							size="xs"
+							color="primary"
+							variant="soft"
+						>
+							Cost est. ${{ estimateCost(h.usage, h.model) }}
+						</UBadge>
 					</div>
 					<div class="text-sm line-clamp-4">{{ h.summary }}</div>
 					<div class="mt-2 flex flex-wrap gap-2">

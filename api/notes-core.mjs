@@ -25,12 +25,18 @@ export const CONFIG_DIR = path.resolve(process.cwd(), 'config')
 export const TAGS_JSON = path.join(CONFIG_DIR, 'tags.json')
 export const CACHE_DIR = path.resolve(process.cwd(), 'cache')
 export const EMBED_CACHE_FILE = path.join(CACHE_DIR, 'embeddings.json')
+export const SUMMARY_CACHE_FILE = path.join(CACHE_DIR, 'summaries.json')
 
 // In-memory caches
 const tagEmbeddingsCache = new Map() // Map<tag, embeddingVector>
 const textEmbeddingCache = new Map() // Map<hash(text), embeddingVector>
 let embedDiskCacheLoaded = false
 let embedDiskCache = { text: {}, tags: {} }
+
+// Summary cache (in-memory + disk)
+const summaryCache = new Map() // Map<sha1(text), { model, summary, tags, usage }>
+let summaryDiskCacheLoaded = false
+let summaryDiskCache = {}
 
 // Ensure config and cache directories exist
 function ensureDirs() {
@@ -81,6 +87,45 @@ function scheduleSaveEmbeddingsCache() {
 	}, 200)
 }
 
+// Load summaries cache from disk if it exists
+function loadSummaryCacheFromDisk() {
+	ensureDirs()
+
+	if (summaryDiskCacheLoaded) return
+
+	if (fs.existsSync(SUMMARY_CACHE_FILE)) {
+		try {
+			const raw = fs.readFileSync(SUMMARY_CACHE_FILE, 'utf-8')
+			const parsed = JSON.parse(raw)
+
+			summaryDiskCache = parsed && typeof parsed === 'object' ? parsed : {}
+
+			// Warm in-memory summary cache
+			for (const [k, v] of Object.entries(summaryDiskCache)) {
+				if (!summaryCache.has(k)) summaryCache.set(k, v)
+			}
+
+			summaryDiskCacheLoaded = true
+		} catch {}
+	} else {
+		summaryDiskCacheLoaded = true
+	}
+}
+
+// Save summaries cache to disk with debounce
+let summarySaveTimer = null
+function scheduleSaveSummaryCache() {
+	if (summarySaveTimer) return
+
+	summarySaveTimer = setTimeout(() => {
+		try {
+			fs.writeFileSync(SUMMARY_CACHE_FILE, JSON.stringify(summaryDiskCache), 'utf-8')
+		} catch {}
+
+		summarySaveTimer = null
+	}, 200)
+}
+
 // Create OpenAI client with API key validation
 export function getClient(apiKey) {
 	if (!apiKey) throw new Error('Missing OPENAI_API_KEY')
@@ -114,6 +159,30 @@ export function readNote(filePath) {
 // Generate SHA-1 hash for text
 function sha1(str) {
 	return crypto.createHash('sha1').update(str).digest('hex')
+}
+
+// Get cached summary if available for given text and model
+export function getCachedSummary(text, model = DEFAULT_MODEL) {
+	loadSummaryCacheFromDisk()
+	const key = sha1(text)
+	const entry = summaryCache.get(key) || summaryDiskCache[key]
+	if (entry && entry.model === model) return entry
+	return null
+}
+
+// Set cached summary
+export function setCachedSummary(text, model, summary, tags, usage) {
+	loadSummaryCacheFromDisk()
+	const key = sha1(text)
+	const entry = {
+		model: model || DEFAULT_MODEL,
+		summary,
+		tags: Array.isArray(tags) ? tags : [],
+		usage: usage || null,
+	}
+	summaryCache.set(key, entry)
+	summaryDiskCache[key] = entry
+	scheduleSaveSummaryCache()
 }
 
 // Get text embedding with cache
@@ -222,6 +291,11 @@ function cosineSimilarity(a = [], b = []) {
 
 // Summarize note text with tags
 export async function summarize(client, text, { model = DEFAULT_MODEL } = {}) {
+	// Return cached summary when available
+	const cached = getCachedSummary(text, model)
+	if (cached) {
+		return { summary: cached.summary, tags: cached.tags, usage: cached.usage, model: cached.model }
+	}
 	// Generate summary and tags
 	const completion = await client.chat.completions.create({
 		model,
@@ -248,7 +322,13 @@ Note:\n\n${text}`,
 		tags = Array.isArray(parsed?.tags) ? parsed.tags : tags
 	} catch {}
 
-	return { summary, tags, usage: completion?.usage || null }
+	const usage = completion?.usage || null
+	// Cache the result to avoid repeat costs
+	try {
+		setCachedSummary(text, model, summary, tags, usage)
+	} catch {}
+
+	return { summary, tags, usage, model }
 }
 
 // Rank tags based on cosine similarity
@@ -308,9 +388,13 @@ export async function evaluateSummary(client, text, summary, { model = DEFAULT_M
 		concision =
 			typeof parsed.concision === 'number' ? Math.max(0, Math.min(1, parsed.concision)) : concision
 		formatting =
-			typeof parsed.formatting === 'number' ? Math.max(0, Math.min(1, parsed.formatting)) : formatting
+			typeof parsed.formatting === 'number'
+				? Math.max(0, Math.min(1, parsed.formatting))
+				: formatting
 		factuality =
-			typeof parsed.factuality === 'number' ? Math.max(0, Math.min(1, parsed.factuality)) : factuality
+			typeof parsed.factuality === 'number'
+				? Math.max(0, Math.min(1, parsed.factuality))
+				: factuality
 		feedback = typeof parsed.feedback === 'string' ? parsed.feedback : feedback
 	} catch {
 		// Fallback heuristic if JSON parsing fails

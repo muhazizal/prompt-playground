@@ -34,4 +34,5 @@ export type NoteResult = {
 	tags: string[]
 	usage?: any
 	evaluation?: Evaluation
+	model?: string
 }

@@ -10,6 +10,8 @@ import {
 	saveTagCandidates,
 	evaluateSummary,
 	DEFAULT_MODEL,
+	getCachedSummary,
+	setCachedSummary,
 } from './notes-core.mjs'
 
 // Basic exponential backoff with jitter
@@ -97,6 +99,7 @@ export function registerNotesRoutes(app) {
 					summary,
 					tags: llmTags,
 					usage,
+					model,
 				} = await withRetries(() => summarize(client, text, {}), {
 					retries: 3,
 					baseDelayMs: 500,
@@ -116,7 +119,7 @@ export function registerNotesRoutes(app) {
 
 				// Combine LLM tags and ranked tags, limit to 7 tags
 				const tags = Array.from(new Set([...(llmTags || []), ...(embedTags || [])])).slice(0, 7)
-				return { file: path.basename(p), summary, tags, usage, evaluation }
+				return { file: path.basename(p), summary, tags, usage, evaluation, model }
 			})
 
 			res.json({ results })
@@ -137,7 +140,7 @@ export function registerNotesRoutes(app) {
 			if (!text || typeof text !== 'string') return res.status(400).json({ error: 'Invalid text' })
 
 			// Generate summary, tags, and evaluation for the note
-			const { summary, tags, usage } = await summarize(client, text, {})
+			const { summary, tags, usage, model } = await summarize(client, text, {})
 			const embedTags = await rankTags(client, text)
 			const evaluation = await evaluateSummary(client, text, summary, {})
 
@@ -146,6 +149,7 @@ export function registerNotesRoutes(app) {
 				tags: Array.from(new Set([...(tags || []), ...embedTags])),
 				usage,
 				evaluation,
+				model,
 			})
 		} catch (err) {
 			res.status(500).json({ error: err?.message || String(err) })
@@ -181,6 +185,24 @@ export function registerNotesRoutes(app) {
 
 			res.write(`event: start\n` + `data: {}\n\n`)
 
+			// If we have a cached summary, short-circuit streaming and return cached result
+			const cached = getCachedSummary(text, DEFAULT_MODEL)
+			if (cached) {
+				const final = {
+					summary: cached.summary,
+					tags: Array.isArray(cached.tags) ? cached.tags.slice(0, 7) : [],
+					model: cached.model,
+				}
+				res.write(`event: result\n` + `data: ${JSON.stringify(final)}\n\n`)
+				if (cached.usage) res.write(`event: usage\n` + `data: ${JSON.stringify(cached.usage)}\n\n`)
+				try {
+					const evaluation = await evaluateSummary(client, text, final.summary, {})
+					res.write(`event: evaluation\n` + `data: ${JSON.stringify(evaluation)}\n\n`)
+				} catch {}
+				res.write(`event: end\n` + `data: {}\n\n`)
+				return res.end()
+			}
+
 			// Stream summary and tags from OpenAI
 			const stream = await client.chat.completions.create({
 				model: DEFAULT_MODEL,
@@ -212,7 +234,7 @@ export function registerNotesRoutes(app) {
 			}
 
 			// Parse final JSON response
-			let final = { summary: buffer, tags: [] }
+			let final = { summary: buffer, tags: [], model: DEFAULT_MODEL }
 			try {
 				const parsed = JSON.parse(buffer)
 				final.summary = parsed?.summary || final.summary
@@ -226,6 +248,11 @@ export function registerNotesRoutes(app) {
 			if (usage) {
 				res.write(`event: usage\n` + `data: ${JSON.stringify(usage)}\n\n`)
 			}
+
+			// Cache the streamed summary to avoid repeat costs next time
+			try {
+				setCachedSummary(text, DEFAULT_MODEL, final.summary, final.tags, usage)
+			} catch {}
 
 			// Send evaluation after the result
 			try {
