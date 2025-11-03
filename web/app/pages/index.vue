@@ -13,7 +13,7 @@ const models = ref<Array<{ label: string; value: string }>>([])
 const prompt = ref('Explain what temperature does in LLMs, briefly.')
 const model = ref<{ label: string; value: string }>({ label: 'gpt-4o-mini', value: 'gpt-4o-mini' })
 const maxTokens = ref(200)
-const samples = ref(1)
+const samples = ref(2)
 const temperatureSelection = ref<Array<{ label: string; value: number }>>([
 	{ label: '0.50', value: 0.5 },
 ])
