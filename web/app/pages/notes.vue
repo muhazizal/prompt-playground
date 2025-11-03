@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const toast = useToast()
+
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
 
@@ -29,7 +31,7 @@ onMounted(async () => {
 	await loadTagsConfig()
 })
 
-async function loadList() {
+async function loadList(refresh = false) {
 	loadingList.value = true
 	error.value = null
 
@@ -38,23 +40,48 @@ async function loadList() {
 		const list = (res as any)?.files || []
 
 		files.value = Array.isArray(list) ? list : []
-		selected.value = files.value.slice(0, 2).map((f) => f.name)
+
+		if (refresh) {
+			toast.add({
+				title: 'Notes loaded',
+				description: `Loaded ${files.value.length} notes`,
+				color: 'success',
+			})
+		}
 	} catch (e: any) {
 		error.value = e?.data?.error || e?.message || 'Failed to load notes'
+		toast.add({
+			title: 'Failed to load notes',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 	} finally {
 		loadingList.value = false
 	}
 }
 
-async function loadTagsConfig() {
+async function loadTagsConfig(refresh = false) {
 	tagsLoading.value = true
 	try {
 		const res = await $fetch(`${apiBase}/notes/tags`)
 		const tags = (res as any)?.tags || []
 
 		tagsConfig.value = Array.isArray(tags) ? tags : []
+
+		if (refresh) {
+			toast.add({
+				title: 'Tag config loaded',
+				description: `Loaded ${tagsConfig.value.length} tags`,
+				color: 'success',
+			})
+		}
 	} catch (e: any) {
 		console.warn('Failed to load tag config', e?.data?.error || e?.message)
+		toast.add({
+			title: 'Failed to load tag config',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 	} finally {
 		tagsLoading.value = false
 	}
@@ -66,8 +93,19 @@ async function saveTagsConfig() {
 		const clean = tagsConfig.value.map((t) => t.trim()).filter((t) => !!t)
 
 		await $fetch(`${apiBase}/notes/tags`, { method: 'POST', body: { tags: clean } })
+
+		toast.add({
+			title: 'Tag config saved',
+			description: `Saved ${clean.length} tags`,
+			color: 'success',
+		})
 	} catch (e: any) {
 		console.warn('Failed to save tag config', e?.data?.error || e?.message)
+		toast.add({
+			title: 'Failed to save tag config',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 	} finally {
 		tagsSaving.value = false
 	}
@@ -94,11 +132,21 @@ async function processSelected() {
 			})
 
 			results.value = ((res as any)?.results || []) as NoteResult[]
+			toast.add({
+				title: 'Notes processed',
+				description: `Processed ${results.value.length} notes`,
+				color: 'success',
+			})
 		} else {
 			await processSelectedStreaming()
 		}
 	} catch (e: any) {
 		error.value = e?.data?.error || e?.message || 'Processing failed'
+		toast.add({
+			title: 'Failed to process notes',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 	} finally {
 		processing.value = false
 	}
@@ -136,9 +184,19 @@ async function streamSummarizeFile(name: string) {
 		})
 		es.addEventListener('error', (ev: MessageEvent) => {
 			console.warn('Stream error', ev)
+			toast.add({
+				title: 'Failed to process note',
+				description: `Error processing ${partial.file}: ${ev.data}`,
+				color: 'error',
+			})
 		})
 		es.addEventListener('end', () => {
 			results.value.push(partial as NoteResult)
+			toast.add({
+				title: 'Note processed',
+				description: `Processed ${partial.file}`,
+				color: 'success',
+			})
 			es.close()
 			resolve()
 		})
@@ -148,8 +206,18 @@ async function streamSummarizeFile(name: string) {
 function copyText(text: string) {
 	try {
 		navigator.clipboard?.writeText(text)
+		toast.add({
+			title: 'Copied to clipboard',
+			description: 'The text has been copied to the clipboard.',
+			color: 'success',
+		})
 	} catch (e) {
 		console.warn('Clipboard copy failed', e)
+		toast.add({
+			title: 'Clipboard copy failed',
+			description: 'Unknown error',
+			color: 'error',
+		})
 	}
 }
 </script>
@@ -168,7 +236,7 @@ function copyText(text: string) {
 							variant="soft"
 							:loading="loadingList"
 							icon="i-heroicons-arrow-path"
-							@click="loadList"
+							@click="loadList(true)"
 							>Reload</UButton
 						>
 						<UButton :loading="processing" icon="i-heroicons-sparkles" @click="processSelected"
@@ -193,7 +261,7 @@ function copyText(text: string) {
 								color="neutral"
 								variant="soft"
 								:loading="tagsLoading"
-								@click="loadTagsConfig"
+								@click="loadTagsConfig(true)"
 								icon="i-heroicons-arrow-path"
 								>Reload Tags</UButton
 							>
@@ -207,14 +275,8 @@ function copyText(text: string) {
 							>
 						</div>
 					</div>
-					<div class="text-xs text-gray-600 mb-2">Edit tags as comma-separated values.</div>
-					<UTextarea
-						v-model="(tagsConfig as any)"
-						class="w-full"
-						:rows="3"
-						:value="tagsConfig.join(', ')"
-						@update:model-value="(val: string) => { tagsConfig = (val || '').split(',').map(t => t.trim()).filter(t => !!t) as any }"
-					/>
+					<div class="text-xs text-gray-600 mb-2">Enter after typing each tag.</div>
+					<UInputTags v-model="tagsConfig" size="lg" />
 				</UCard>
 
 				<div class="grid md:grid-cols-2 gap-3">
