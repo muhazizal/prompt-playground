@@ -87,7 +87,7 @@ async function runPrompt() {
 			? temperatureSelection.value.map((t) => t.value)
 			: [0.5]
 
-		const res = await $fetch(`${apiBase}/chat`, {
+		const res = await $fetch(`${apiBase}/prompt/chat`, {
 			method: 'POST',
 			body,
 		})
@@ -129,7 +129,7 @@ async function runPrompt() {
 async function handleLoadModel() {
 	loadingModels.value = true
 	try {
-		const res = await $fetch(`${apiBase}/models`)
+		const res = await $fetch(`${apiBase}/prompt/models`)
 		const list = (res as any)?.models
 		if (Array.isArray(list) && list.length > 0) {
 			models.value = list
