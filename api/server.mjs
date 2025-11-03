@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import OpenAI from 'openai'
+import { registerNotesRoutes } from './notes.mjs'
 
 dotenv.config()
 
@@ -11,6 +12,8 @@ const ORIGIN = process.env.WEB_ORIGIN || 'http://localhost:3000'
 
 app.use(cors({ origin: ORIGIN }))
 app.use(express.json())
+
+registerNotesRoutes(app)
 
 app.get('/health', (_req, res) => {
 	res.json({ ok: true })

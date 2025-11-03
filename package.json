@@ -8,7 +8,8 @@
 		"demo:chat": "node examples/chat_prompting.mjs",
 		"demo:embeddings": "node examples/embeddings.mjs",
 		"demo:tokens": "node examples/tokenization.mjs",
-		"demo:prompt": "node examples/prompt_engineering.mjs"
+		"demo:prompt": "node examples/prompt_engineering.mjs",
+		"demo:notes": "node examples/notes_assistant.mjs"
 	},
 	"dependencies": {
 		"@dqbd/tiktoken": "^1.0.22",
