@@ -1,10 +1,10 @@
 # prompt-playground
 
-An end-to-end learning and experimentation repo for LLMs with:
+An end-to-end playground for LLM prompting and notes summarization.
 
 - CLI demos for tokens, embeddings, and chat prompting
-- A simple API server that proxies to OpenAI with metrics
-- A Nuxt web app UI for multi-sample comparison and history
+- Modular API server (prompt and notes) that proxies to OpenAI with metrics
+- Nuxt web app with a Notes Assistant (batch and streaming) and Firestore history
 
 ## Overview
 
@@ -18,11 +18,16 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 ## Project Structure
 
 - `cli.mjs` → Main CLI entry point
-- `api.mjs` → Express API server
+- `api/` → Express API (ESM modules)
+  - `server.mjs` → app bootstrap (CORS, JSON, health)
+  - `prompt-core.mjs` → prompt/Chat and model-list logic
+  - `prompt.mjs` → registers prompt endpoints (chat/models)
+  - `notes-core.mjs` → summarization, embeddings, evaluation, caching utilities
+  - `notes.mjs` → registers notes endpoints (list/process/summarize/stream, tags)
 - `web/` → Nuxt web app
-  - `pages/` → Vue components
-  - `components/` → Reusable UI components
-  - `plugins/` → Firebase Firestore integration (optional)
+  - `app/pages/notes.vue` → Notes Assistant UI
+  - `app/plugins/firebase.client.ts` → Firebase anonymous auth + Firestore
+  - `app/helpers/types.ts` → shared types for results/evaluation
 - `examples/` → Sample scripts for CLI demos
 
 ## Tech Stack
@@ -87,15 +92,15 @@ Options:
 
 ## Web App (Nuxt + Express)
 
-- Start frontend: `npm run web:dev` (Nuxt dev on `http://localhost:3000/`)
+- Start frontend: `npm run web:dev` (Nuxt dev on `http://localhost:3002/`)
 - Start API: `npm run api:dev` (Express on `http://localhost:4000/`)
-- Combined dev: `npm run dev` (requires `concurrently` installed)
+- Combined dev: `npm run dev` (runs both; ports may vary)
 
 Environment:
 
 - Backend: `.env` at repo root
   - `OPENAI_API_KEY=your_key_here`
-  - Optional: `WEB_ORIGIN=http://localhost:3000`
+  - Optional: `WEB_ORIGIN=http://localhost:3000,http://localhost:3002`
 - Frontend: `.env` in `web` (or export vars before running)
   - `NUXT_PUBLIC_FIREBASE_API_KEY=...`
   - `NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...`
@@ -106,28 +111,33 @@ Environment:
 
 Features:
 
-- Prompt form with model select (`USelectMenu`), max tokens, samples
-- Temperatures multi-select to run multiple temperature batches at once
-- Multi-sample outputs per temperature, with per-run latency and token usage
-- Copy button for each sample output
-- Dynamic model list fetched from backend capabilities
+- Prompt UI with model select, max tokens, samples
+- Temperatures multi-select; compare outputs across temperatures
+- Per-run latency and token usage (prompt/completion/total)
+- Dynamic `/prompt/models` list (fallback on missing API key)
 - Save prompt + runs to Firestore when Firebase is configured
-- History list shows past runs with metadata
+- Notes Assistant:
+  - Loads notes from `notes/`
+  - Batch process (`POST /notes/process`) with usage and evaluation
+  - Streaming summarize (`GET /notes/summarize-stream`) via SSE with usage and evaluation events
+  - Saves summaries per file to Firestore and lists history
+  - Tag configuration (`GET/POST /notes/tags`) stored in `config/tags.json`
 
 API Endpoints:
 
-- `POST /chat`
-  - Request body: `{ prompt, model, maxTokens, n, temperatures }`
-    - `n` = number of samples per run
-    - `temperatures` = array of temperatures to run (e.g., `[0.25, 0.5, 0.75]`)
-  - Response body: `{ runs: Array<{ temperature, choices, usage, durationMs }> }`
-    - `choices` = array of `{ index, text }`
-    - `usage` = `{ prompt_tokens, completion_tokens, total_tokens }`
-    - `durationMs` = latency in milliseconds per temperature run
-- `GET /models`
-  - Returns `{ models: Array<{ label, value }> }` from backend capabilities or a fallback list
+- `POST /prompt/chat`
+  - Body: `{ prompt, model, maxTokens, n, temperatures }`
+  - Returns: `{ runs: Array<{ temperature, choices, usage, durationMs }>, prompt, model, maxTokens }`
+- `GET /prompt/models`
+  - Returns `{ models: Array<{ label, value }> }` from backend or fallback list
+- Notes
+  - `GET /notes/list` → `{ files: Array<{ name }> }`
+  - `POST /notes/process` → `{ results: Array<{ file, summary, tags, usage, evaluation }> }`
+  - `POST /notes/summarize` → `{ summary, tags, usage, evaluation }`
+  - `GET /notes/summarize-stream?path=<file>` → SSE events: `start`, `summary`, `result`, `usage`, `evaluation`, `end`, `server_error`
+  - `GET /notes/tags` / `POST /notes/tags` → load/save tag candidates
 
-## Prompt Templates
+## Prompt Templates & Notes Assistant
 
 - See `notes/prompt-templates.md` for:
   - Few-shot classification (JSON)
@@ -137,6 +147,23 @@ API Endpoints:
 
 ## Notes
 
-- Firestore is optional. If Firebase env vars are not set, the app still runs; saving will be skipped.
-- The web app uses Nuxt’s server-driven configuration. Types are derived from Nuxt’s generated `tsconfig` with local augmentations for injected app values.
-- The API server supports multi-sample output comparison across temperatures and reports per-run metrics; it does not stream tokens.
+- Firestore is optional. If Firebase env vars are not set, saving is skipped.
+- The API server now has modular prompt and notes routes for clarity and maintainability.
+- Embeddings caching lives in `cache/embeddings.json` and warms in-memory caches.
+- SSE streaming emits usage and evaluation after the result for better UX.
+
+## Quick Tests
+
+```bash
+# Models list (fallback if no OPENAI_API_KEY)
+curl -s http://localhost:4000/prompt/models | jq
+
+# Chat with two temperatures
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Explain embeddings in 2 sentences","temperatures":[0.2,0.7],"n":1,"maxTokens":120}' | jq
+
+# Notes: list and process
+curl -s http://localhost:4000/notes/list | jq
+curl -s -X POST http://localhost:4000/notes/process -H 'Content-Type: application/json' -d '{}' | jq
+```
