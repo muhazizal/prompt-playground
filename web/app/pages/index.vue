@@ -5,6 +5,8 @@ import { getDocs, addDoc, collection, serverTimestamp } from 'firebase/firestore
 import { temperatureOptions } from '@/helpers/constants'
 import type { RunResult, HistoryEntry } from '@/helpers/types'
 
+const toast = useToast()
+
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
 
@@ -43,9 +45,19 @@ async function saveRecord(entry: {
 			...entry,
 			createdAt: serverTimestamp(),
 		})
-		console.log('[save] success')
+
+		toast.add({
+			title: 'Record saved',
+			description: 'The record has been saved to the database.',
+			color: 'success',
+		})
 	} catch (e: any) {
 		console.warn('[save] failed:', e?.message || e)
+		toast.add({
+			title: 'Failed to save record',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 		return
 	}
 }
@@ -90,6 +102,11 @@ async function runPrompt() {
 		await saveRecord(entry)
 	} catch (e: any) {
 		error.value = e?.data?.error || e?.message || 'Request failed'
+		toast.add({
+			title: 'Failed to run prompt',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 	} finally {
 		loading.value = false
 	}
@@ -108,7 +125,13 @@ async function handleLoadModel() {
 				model.value = list[0]
 			}
 		}
-	} catch {
+	} catch (e: any) {
+		console.warn('[load models] failed:', e?.message || e)
+		toast.add({
+			title: 'Failed to load models',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 	} finally {
 		loadingModels.value = false
 	}
@@ -131,6 +154,11 @@ async function handleLoadHistory() {
 		console.log('[load history]', list)
 	} catch (e: any) {
 		console.warn('[load history] failed:', e?.message || e)
+		toast.add({
+			title: 'Failed to load history',
+			description: e?.data?.error || e?.message || 'Unknown error',
+			color: 'error',
+		})
 	} finally {
 		loading.value = false
 	}
@@ -144,8 +172,18 @@ onMounted(async () => {
 function copyText(text: string) {
 	try {
 		navigator.clipboard?.writeText(text)
+		toast.add({
+			title: 'Copied to clipboard',
+			description: 'The text has been copied to the clipboard.',
+			color: 'success',
+		})
 	} catch (e) {
 		console.warn('Clipboard copy failed', e)
+		toast.add({
+			title: 'Clipboard copy failed',
+			description: 'Unknown error',
+			color: 'error',
+		})
 	}
 }
 </script>
