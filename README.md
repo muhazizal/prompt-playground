@@ -89,6 +89,7 @@ Options:
 - `npm run demo:chat` → `node examples/chat_prompting.mjs`
 - `npm run demo:embeddings` → `node examples/embeddings.mjs`
 - `npm run demo:prompt` → `node examples/prompt_engineering.mjs`
+- `npm run demo:notes` → `node examples/notes_summarization.mjs`
 
 ## Web App (Nuxt + Express)
 
@@ -132,8 +133,8 @@ API Endpoints:
   - Returns `{ models: Array<{ label, value }> }` from backend or fallback list
 - Notes
   - `GET /notes/list` → `{ files: Array<{ name }> }`
-  - `POST /notes/process` → `{ results: Array<{ file, summary, tags, usage, evaluation }> }`
-  - `POST /notes/summarize` → `{ summary, tags, usage, evaluation }`
+  - `POST /notes/process` → `{ results: Array<{ file, summary, model, tags, usage, evaluation }> }`
+  - `POST /notes/summarize` → `{ summary, model, tags, usage, evaluation }`
   - `GET /notes/summarize-stream?path=<file>` → SSE events: `start`, `summary`, `result`, `usage`, `evaluation`, `end`, `server_error`
   - `GET /notes/tags` / `POST /notes/tags` → load/save tag candidates
 
