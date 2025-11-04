@@ -453,12 +453,14 @@ function copyText(text: string) {
 					<UButton
 						class="h-full"
 						:loading="processing"
-						icon="i-heroicons-sparkles"
+						icon="i-heroicons-play"
 						@click="processSelected"
-						>Process Selected</UButton
+						>Run Assistant</UButton
 					>
 					<UButton
 						class="h-full"
+						variant="soft"
+						color="neutral"
 						:disabled="processing"
 						icon="i-heroicons-x-mark"
 						@click="results = []"

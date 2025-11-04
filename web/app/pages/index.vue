@@ -30,6 +30,7 @@ const responseText = ref('')
 // Output state
 const outputRunPrompt = ref<HistoryEntry>()
 const history = ref<HistoryEntry[]>([])
+const useStreaming = ref(false)
 
 // Init Firestore
 const nuxt = useNuxtApp()
@@ -75,44 +76,48 @@ async function runPrompt() {
 	error.value = null
 	responseText.value = ''
 	try {
-		const body: any = {
-			prompt: prompt.value,
-			model: model.value.value,
-			maxTokens: maxTokens.value,
-			n: samples.value,
+		if (!useStreaming.value) {
+			const body: any = {
+				prompt: prompt.value,
+				model: model.value.value,
+				maxTokens: maxTokens.value,
+				n: samples.value,
+			}
+
+			// Always send temperatures, default to 0.50 if none selected
+			body.temperatures = temperatureSelection.value.length
+				? temperatureSelection.value.map((t) => t.value)
+				: [0.5]
+
+			const res = await $fetch(`${apiBase}/prompt/chat`, {
+				method: 'POST',
+				body,
+			})
+			const data = res as any
+			const runs: RunResult[] = Array.isArray(data?.runs) ? data.runs : []
+
+			// Format response text for display
+			responseText.value = runs
+				.flatMap((r) =>
+					r.choices.map((c) => `T=${r.temperature.toFixed(2)} [${c.index + 1}]: ${c.text}`)
+				)
+				.join('\n\n')
+
+			// Save the run result to Output and Firestore
+			const entry = {
+				prompt: prompt.value,
+				model: model.value.value,
+				temperatures: temperatureSelection.value.map((t) => t.value),
+				maxTokens: maxTokens.value,
+				samples: samples.value,
+				runs,
+				at: Date.now(),
+			}
+			outputRunPrompt.value = entry
+			await saveRecord(entry)
+		} else {
+			await streamPrompt()
 		}
-
-		// Always send temperatures, default to 0.50 if none selected
-		body.temperatures = temperatureSelection.value.length
-			? temperatureSelection.value.map((t) => t.value)
-			: [0.5]
-
-		const res = await $fetch(`${apiBase}/prompt/chat`, {
-			method: 'POST',
-			body,
-		})
-		const data = res as any
-		const runs: RunResult[] = Array.isArray(data?.runs) ? data.runs : []
-
-		// Format response text for display
-		responseText.value = runs
-			.flatMap((r) =>
-				r.choices.map((c) => `T=${r.temperature.toFixed(2)} [${c.index + 1}]: ${c.text}`)
-			)
-			.join('\n\n')
-
-		// Save the run result to Output and Firestore
-		const entry = {
-			prompt: prompt.value,
-			model: model.value.value,
-			temperatures: temperatureSelection.value.map((t) => t.value),
-			maxTokens: maxTokens.value,
-			samples: samples.value,
-			runs,
-			at: Date.now(),
-		}
-		outputRunPrompt.value = entry
-		await saveRecord(entry)
 	} catch (e: any) {
 		error.value = e?.data?.error || e?.message || 'Request failed'
 		toast.add({
@@ -123,6 +128,145 @@ async function runPrompt() {
 	} finally {
 		loading.value = false
 	}
+}
+
+// Stream exactly one temperature and return a RunResult
+function streamOnce(temp: number) {
+	return new Promise<RunResult>((resolve, reject) => {
+		const url =
+			`${apiBase}/prompt/chat/stream?` +
+			`prompt=${encodeURIComponent(prompt.value)}` +
+			`&model=${encodeURIComponent(model.value.value)}` +
+			`&temperature=${encodeURIComponent(temp)}` +
+			`&maxTokens=${encodeURIComponent(maxTokens.value)}`
+
+		const es = new EventSource(url)
+
+		let started = 0
+		let buffer = ''
+		let usage: any = null
+		let completed = false
+
+		es.addEventListener('open', () => {
+			started = Date.now()
+			// Show which temperature is currently streaming
+			responseText.value = `T=${temp.toFixed(2)}: `
+		})
+
+		// Accumulate summary chunks into responseText for live feedback
+		es.addEventListener('summary', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data)
+				if (typeof data?.chunk === 'string') {
+					buffer += data.chunk
+					responseText.value = `T=${temp.toFixed(2)}: ` + buffer
+				}
+			} catch {}
+		})
+
+		// Final text
+		es.addEventListener('result', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data)
+				if (typeof data?.text === 'string') buffer = data.text
+			} catch {}
+		})
+
+		// Usage tokens
+		es.addEventListener('usage', (ev: MessageEvent) => {
+			try {
+				usage = JSON.parse(ev.data)
+			} catch {}
+		})
+
+		// Server error event from API
+		es.addEventListener('server_error', (ev: MessageEvent) => {
+			try {
+				const data = JSON.parse(ev.data)
+				error.value = data?.error || 'Server error'
+			} catch {
+				error.value = 'Server error'
+			}
+			es.close()
+			reject(new Error(error.value || 'Server error'))
+		})
+
+		// Network error (ignore if already completed)
+		es.addEventListener('error', () => {
+			if (completed) {
+				es.close()
+				return
+			}
+			console.warn('Stream connection error')
+			es.close()
+			reject(new Error('Stream connection error'))
+		})
+
+		// End of stream: return single RunResult
+		es.addEventListener('end', () => {
+			completed = true
+			const durationMs = started ? Date.now() - started : 0
+			const run: RunResult = {
+				temperature: temp,
+				choices: [{ index: 0, text: buffer }],
+				usage,
+				durationMs,
+			}
+			es.close()
+			resolve(run)
+		})
+	})
+}
+
+// Stream across multiple temperatures sequentially and save a single history entry
+async function streamPrompt() {
+	const temps = temperatureSelection.value.length
+		? temperatureSelection.value.map((t) => t.value)
+		: [0.5]
+
+	const runs: RunResult[] = []
+	for (const temp of temps) {
+		try {
+			const run = await streamOnce(temp)
+			runs.push(run)
+		} catch (e: any) {
+			const msg = e?.message || 'Streaming failed'
+			toast.add({
+				title: 'Stream failed',
+				description: `T=${temp.toFixed(2)}: ${msg}`,
+				color: 'error',
+			})
+			// Continue to next temperature
+		}
+	}
+
+	if (runs.length === 0) {
+		error.value = 'All streams failed'
+		return
+	}
+
+	// Display aggregated output in responseText
+	responseText.value = runs
+		.map((r) => `T=${r.temperature.toFixed(2)} [1]: ${r.choices?.[0]?.text ?? ''}`)
+		.join('\n\n')
+
+	const entry = {
+		prompt: prompt.value,
+		model: model.value.value,
+		temperatures: runs.map((r) => r.temperature),
+		maxTokens: maxTokens.value,
+		samples: 1,
+		runs,
+		at: Date.now(),
+	}
+	outputRunPrompt.value = entry
+	await saveRecord(entry)
+
+	toast.add({
+		title: 'Stream completed',
+		description: `Collected ${runs.length} run(s)`,
+		color: 'success',
+	})
 }
 
 // Load available models from API
@@ -214,7 +358,11 @@ function copyText(text: string) {
 		<UCard>
 			<div class="grid gap-6">
 				<!-- Prompt Input -->
-				<UTextarea v-model="prompt" :rows="6" placeholder="Write your prompt here" />
+				<div class="flex flex-col w-full">
+					<strong>Prompt Input</strong>
+					<div class="text-xs text-gray-600 mb-3 mt-1">Enter your prompt here.</div>
+					<UTextarea v-model="prompt" :rows="6" placeholder="Write your prompt here" />
+				</div>
 
 				<div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
 					<!-- Models -->
@@ -264,9 +412,25 @@ function copyText(text: string) {
 				</div>
 
 				<!-- Run Prompt Button -->
-				<div class="flex gap-2">
-					<UButton :loading="loading" icon="i-heroicons-play" @click="runPrompt">Run</UButton>
-					<UButton color="neutral" variant="soft" @click="responseText = ''">Clear Output</UButton>
+				<div class="flex gap-3 items-center">
+					<USwitch
+						v-model="useStreaming"
+						checked-icon="i-heroicons-wifi"
+						unchecked-icon="i-heroicons-no-symbol"
+						label="Stream Prompt"
+						description="Real-time result"
+					/>
+					<UButton class="h-full" :loading="loading" icon="i-heroicons-play" @click="runPrompt"
+						>Run Prompt</UButton
+					>
+					<UButton
+						class="h-full"
+						color="neutral"
+						variant="soft"
+						icon="i-heroicons-x-mark"
+						@click="responseText = ''"
+						>Clear Output</UButton
+					>
 				</div>
 
 				<!-- Error Alert -->
