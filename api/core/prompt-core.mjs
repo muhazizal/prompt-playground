@@ -1,10 +1,15 @@
+import fs from 'fs'
+import path from 'path'
 import { getClient as getNotesClient } from './notes-core.mjs'
 
-// Default fallback models if listing fails
-export const DEFAULT_CHAT_MODELS = [
-	{ label: 'gpt-4o-mini', value: 'gpt-4o-mini' },
-	{ label: 'gpt-4o', value: 'gpt-4o' },
-]
+// Task-based default models
+export const TASK_MODELS = {
+	'text-generation': { label: 'Text Generation', value: 'gpt-4o-mini' },
+	'image-generation': { label: 'Image Generation', value: 'gpt-image-1' },
+	'image-vision': { label: 'Image Vision', value: 'gpt-4o-mini' }, // Use gpt-4o-mini for reliable vision
+	'speech-to-text': { label: 'Speech → Text', value: 'whisper-1' },
+	'text-to-speech': { label: 'Text → Speech', value: 'gpt-4o-mini-tts' },
+}
 
 /**
  * Create an OpenAI client from API key.
@@ -23,7 +28,7 @@ export async function chatWithTemperatures(
 	{ prompt, model = 'gpt-4o-mini', temperature = 0.3, maxTokens = 200, n = 1, temperatures } = {}
 ) {
 	if (!prompt || typeof prompt !== 'string') {
-		throw new Error('Invalid prompt')
+		throw new Error('Missing prompt')
 	}
 
 	// Validate and normalize temperatures
@@ -60,17 +65,132 @@ export async function chatWithTemperatures(
 /**
  * List available chat-capable models. Falls back to defaults on error.
  */
-export async function listModels(client) {
-	try {
-		const list = await client.models.list()
-		const models = (list?.data || [])
-			.map((m) => m?.id)
-			.filter(Boolean)
-			.filter((id) => /gpt|o|mini|turbo/i.test(id))
-			.slice(0, 20)
-			.map((id) => ({ label: id, value: id }))
-		return models.length > 0 ? models : DEFAULT_CHAT_MODELS
-	} catch {
-		return DEFAULT_CHAT_MODELS
+export async function listModels() {
+	return [
+		TASK_MODELS['text-generation'],
+		TASK_MODELS['image-generation'],
+		TASK_MODELS['image-vision'],
+		TASK_MODELS['speech-to-text'],
+		TASK_MODELS['text-to-speech'],
+	]
+}
+
+/**
+ * Describe an image using a vision-capable chat model.
+ */
+export async function visionDescribe(
+	client,
+	{
+		imageUrl,
+		imageBase64,
+		prompt = 'Describe the image in detail.',
+		model = TASK_MODELS['image-vision'].value,
+		maxTokens = 300,
+		temperature = 0.2,
+	} = {}
+) {
+	// Validate image input
+	const dataUrlCandidate =
+		typeof imageBase64 === 'string' && imageBase64
+			? imageBase64.startsWith('data:')
+				? imageBase64
+				: `data:image/png;base64,${imageBase64}`
+			: null
+	const url = imageUrl || dataUrlCandidate
+	if (!url) throw new Error('Missing imageUrl or imageBase64')
+
+	// Run vision model completion
+	const started = Date.now()
+	const completion = await client.chat.completions.create({
+		model,
+		temperature,
+		max_tokens: maxTokens,
+		messages: [
+			{ role: 'system', content: 'You are a helpful visual assistant.' },
+			{
+				role: 'user',
+				content: [
+					{ type: 'text', text: prompt },
+					{ type: 'image_url', image_url: { url } },
+				],
+			},
+		],
+	})
+	const durationMs = Date.now() - started
+	const text = completion?.choices?.[0]?.message?.content || ''
+	return { text, usage: completion?.usage || null, model, durationMs }
+}
+
+/**
+ * Speech-to-Text transcription using Whisper.
+ */
+export async function speechToTextTranscribe(
+	client,
+	{ audioBase64, model = TASK_MODELS['speech-to-text'].value, language } = {}
+) {
+	if (!audioBase64 || typeof audioBase64 !== 'string') throw new Error('Missing audioBase64')
+	const base64 = audioBase64.replace(/^data:[^;]+;base64,/, '')
+	const buf = Buffer.from(base64, 'base64')
+	const tmpDir = path.join(process.cwd(), 'cache')
+	if (!fs.existsSync(tmpDir)) {
+		fs.mkdirSync(tmpDir, { recursive: true })
 	}
+	const tmpPath = path.join(tmpDir, `stt-${Date.now()}.mp3`)
+	fs.writeFileSync(tmpPath, buf)
+
+	const started = Date.now()
+	const res = await client.audio.transcriptions.create({
+		model,
+		file: fs.createReadStream(tmpPath),
+		language,
+	})
+	const durationMs = Date.now() - started
+	try {
+		fs.unlinkSync(tmpPath)
+	} catch {}
+
+	return { text: res?.text || '', model, durationMs }
+}
+
+/**
+ * Text-to-Speech synthesis using gpt-4o-mini-tts.
+ */
+export async function textToSpeechSynthesize(
+	client,
+	{ text, model = TASK_MODELS['text-to-speech'].value, voice = 'alloy', format = 'mp3' } = {}
+) {
+	if (!text || typeof text !== 'string') throw new Error('Missing text')
+	const started = Date.now()
+	const audio = await client.audio.speech.create({
+		model,
+		voice,
+		input: text,
+	})
+	const durationMs = Date.now() - started
+	const buffer = Buffer.from(await audio.arrayBuffer())
+	const audioBase64 = buffer.toString('base64')
+	const contentType = format === 'wav' ? 'audio/wav' : 'audio/mpeg'
+	return { audioBase64, contentType, model, durationMs }
+}
+
+/**
+ * Image generation using gpt-image-1. Returns base64 PNG by default.
+ */
+export async function imageGenerate(
+	client,
+	{ prompt, model = TASK_MODELS['image-generation'].value, size = '1024x1024', format = 'png' } = {}
+) {
+	if (!prompt || typeof prompt !== 'string') throw new Error('Missing prompt')
+
+	const started = Date.now()
+	const res = await client.images.generate({
+		model,
+		prompt,
+		size,
+	})
+	const durationMs = Date.now() - started
+	const b64 = res?.data?.[0]?.b64_json || ''
+	const imageBase64 = typeof b64 === 'string' ? b64 : ''
+	const contentType = format === 'webp' ? 'image/webp' : 'image/png'
+	return { imageBase64, contentType, model, durationMs, size }
 }

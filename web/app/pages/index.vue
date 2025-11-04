@@ -3,7 +3,16 @@ import { Firestore } from 'firebase/firestore'
 import { getDocs, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 
 import { temperatureOptions } from '@/helpers/constants'
-import type { RunResult, HistoryEntry } from '@/helpers/types'
+import { handleFileReader } from '@/helpers/functions'
+import type {
+	RunResult,
+	HistoryEntry,
+	TaskOption,
+	VisionHistory,
+	TranscriptionHistory,
+	TTSHistory,
+	ImageGenHistory,
+} from '@/helpers/types'
 
 const toast = useToast()
 
@@ -11,12 +20,18 @@ const toast = useToast()
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
 
-// Model selection
-const models = ref<Array<{ label: string; value: string }>>([])
+// Task-based selection
+const taskOptions = ref<Array<TaskOption>>([])
+const selectedTask = ref<TaskOption>({
+	label: 'Text Generation',
+	task: 'text-generation',
+	model: 'gpt-4o-mini',
+})
 
 // Prompt state
-const prompt = ref('Explain what temperature does in LLMs, briefly.')
-const model = ref<{ label: string; value: string }>({ label: 'gpt-4o-mini', value: 'gpt-4o-mini' })
+const prompt = ref('')
+// Backing model derived from selected task
+const model = computed(() => ({ label: selectedTask.value.label, value: selectedTask.value.model }))
 const maxTokens = ref(200)
 const samples = ref(2)
 const temperatureSelection = ref<Array<{ label: string; value: number }>>([
@@ -27,9 +42,23 @@ const loadingModels = ref(false)
 const error = ref<string | null>(null)
 const responseText = ref('')
 
+// Media inputs
+const imageUrl = ref<string>('')
+const imageBase64 = ref<string>('')
+const audioBase64 = ref<string>('')
+const ttsAudioUrl = ref<string>('')
+const ttsVoice = ref<string>('alloy')
+const generatedImageUrl = ref<string>('')
+const imageSizeOptions = ['1024x1024', '1024x1536', '1536x1024', 'auto']
+const imageSize = ref<string>('1024x1024')
+
 // Output state
 const outputRunPrompt = ref<HistoryEntry>()
 const history = ref<HistoryEntry[]>([])
+const visionHistory = ref<VisionHistory[]>([])
+const transcriptionHistory = ref<TranscriptionHistory[]>([])
+const ttsHistory = ref<TTSHistory[]>([])
+const imageGenHistory = ref<ImageGenHistory[]>([])
 const useStreaming = ref(false)
 
 // Init Firestore
@@ -53,12 +82,6 @@ async function saveRecord(entry: {
 			...entry,
 			createdAt: serverTimestamp(),
 		})
-
-		toast.add({
-			title: 'Record saved',
-			description: 'The record has been saved to the database.',
-			color: 'success',
-		})
 	} catch (e: any) {
 		console.warn('[save] failed:', e?.message || e)
 		toast.add({
@@ -73,51 +96,161 @@ async function saveRecord(entry: {
 // Run a prompt and save the result to Firestore
 async function runPrompt() {
 	loading.value = true
-	error.value = null
+
 	responseText.value = ''
+	outputRunPrompt.value = undefined
+	generatedImageUrl.value = ''
+	ttsAudioUrl.value = ''
+
+	error.value = null
+
 	try {
-		if (!useStreaming.value) {
-			const body: any = {
-				prompt: prompt.value,
-				model: model.value.value,
-				maxTokens: maxTokens.value,
-				n: samples.value,
+		// Branch by task
+		switch (selectedTask.value.task) {
+			case 'text-generation': {
+				if (!useStreaming.value) {
+					// Non-streaming or image provided via base64 only
+					const body: any = {
+						prompt: prompt.value,
+						model: model.value.value,
+						maxTokens: maxTokens.value,
+						n: samples.value,
+					}
+					body.temperatures = temperatureSelection.value.length
+						? temperatureSelection.value.map((t) => t.value)
+						: [0.5]
+
+					// Run the prompt
+					const res = await $fetch(`${apiBase}/prompt/chat`, { method: 'POST', body })
+					const data = res as any
+
+					// Process the response
+					const runs: RunResult[] = Array.isArray(data?.runs) ? data.runs : []
+					responseText.value = runs
+						.flatMap((r) =>
+							r.choices.map((c) => `T=${r.temperature.toFixed(2)} [${c.index + 1}]: ${c.text}`)
+						)
+						.join('\n\n')
+
+					// Save the record
+					const entry = {
+						prompt: prompt.value,
+						model: model.value.value,
+						temperatures: temperatureSelection.value.map((t) => t.value),
+						maxTokens: maxTokens.value,
+						samples: samples.value,
+						runs,
+						at: Date.now(),
+					}
+					outputRunPrompt.value = entry
+					await saveRecord(entry)
+				} else {
+					await streamPrompt()
+				}
+				break
 			}
-
-			// Always send temperatures, default to 0.50 if none selected
-			body.temperatures = temperatureSelection.value.length
-				? temperatureSelection.value.map((t) => t.value)
-				: [0.5]
-
-			const res = await $fetch(`${apiBase}/prompt/chat`, {
-				method: 'POST',
-				body,
-			})
-			const data = res as any
-			const runs: RunResult[] = Array.isArray(data?.runs) ? data.runs : []
-
-			// Format response text for display
-			responseText.value = runs
-				.flatMap((r) =>
-					r.choices.map((c) => `T=${r.temperature.toFixed(2)} [${c.index + 1}]: ${c.text}`)
-				)
-				.join('\n\n')
-
-			// Save the run result to Output and Firestore
-			const entry = {
-				prompt: prompt.value,
-				model: model.value.value,
-				temperatures: temperatureSelection.value.map((t) => t.value),
-				maxTokens: maxTokens.value,
-				samples: samples.value,
-				runs,
-				at: Date.now(),
+			case 'image-vision': {
+				// Run the image vision prompt
+				const res = await $fetch(`${apiBase}/prompt/vision`, {
+					method: 'POST',
+					body: {
+						imageUrl: imageUrl.value || undefined,
+						imageBase64: imageBase64.value || undefined,
+						prompt: prompt.value || 'Describe the image.',
+						model: model.value.value,
+						maxTokens: maxTokens.value,
+					},
+				})
+				const data = res as any
+				responseText.value = data?.text || ''
+				// Save history (avoid large binaries; only store imageUrl if present)
+				await saveVisionRecord({
+					prompt: prompt.value || undefined,
+					imageUrl: imageUrl.value || undefined,
+					text: data?.text || '',
+					model: model.value.value,
+					usage: data?.usage,
+					durationMs: data?.durationMs,
+				})
+				break
 			}
-			outputRunPrompt.value = entry
-			await saveRecord(entry)
-		} else {
-			await streamPrompt()
+			case 'speech-to-text': {
+				// Run the speech-to-text prompt
+				const res = await $fetch(`${apiBase}/prompt/speech-to-text`, {
+					method: 'POST',
+					body: { audioBase64: audioBase64.value, model: model.value.value },
+				})
+				const data = res as any
+				responseText.value = data?.text || ''
+				await saveTranscriptionRecord({
+					text: data?.text || '',
+					model: data?.model || model.value.value,
+					durationMs: data?.durationMs,
+				})
+				break
+			}
+			case 'text-to-speech': {
+				// Run the text-to-speech prompt
+				const res = await $fetch(`${apiBase}/prompt/text-to-speech`, {
+					method: 'POST',
+					body: {
+						text: prompt.value,
+						model: model.value.value,
+						voice: ttsVoice.value,
+						format: 'mp3',
+					},
+				})
+				const data = res as any
+
+				// Process the response
+				if (typeof data?.audioBase64 === 'string') {
+					ttsAudioUrl.value = `data:${data?.contentType || 'audio/mpeg'};base64,${data.audioBase64}`
+					responseText.value = 'Speech generated successfully.'
+				} else {
+					responseText.value = 'Failed to generate speech.'
+				}
+				await saveTTSRecord({
+					text: prompt.value,
+					voice: ttsVoice.value,
+					model: data?.model || model.value.value,
+					durationMs: data?.durationMs,
+				})
+				break
+			}
+			case 'image-generation': {
+				// Generate an image from prompt
+				const res = await $fetch(`${apiBase}/prompt/image-generation`, {
+					method: 'POST',
+					body: {
+						prompt: prompt.value,
+						model: model.value.value,
+						size: imageSize.value,
+						format: 'png',
+					},
+				})
+				const data = res as any
+				const b64 = data?.imageBase64
+				if (typeof b64 === 'string' && b64) {
+					generatedImageUrl.value = `data:image/png;base64,${b64}`
+					responseText.value = 'Image generated successfully.'
+				} else {
+					generatedImageUrl.value = ''
+					responseText.value = 'Failed to generate image.'
+				}
+				await saveImageGenRecord({
+					prompt: prompt.value,
+					model: data?.model || model.value.value,
+					size: imageSize.value,
+				})
+				break
+			}
 		}
+
+		toast.add({
+			title: 'Prompt run successfully',
+			description: 'Check history for details.',
+			color: 'success',
+		})
 	} catch (e: any) {
 		error.value = e?.data?.error || e?.message || 'Request failed'
 		toast.add({
@@ -133,7 +266,7 @@ async function runPrompt() {
 // Stream exactly one temperature and return a RunResult
 function streamOnce(temp: number) {
 	return new Promise<RunResult>((resolve, reject) => {
-		const url =
+		let url =
 			`${apiBase}/prompt/chat/stream?` +
 			`prompt=${encodeURIComponent(prompt.value)}` +
 			`&model=${encodeURIComponent(model.value.value)}` +
@@ -149,6 +282,7 @@ function streamOnce(temp: number) {
 
 		es.addEventListener('open', () => {
 			started = Date.now()
+
 			// Show which temperature is currently streaming
 			responseText.value = `T=${temp.toFixed(2)}: `
 		})
@@ -261,12 +395,6 @@ async function streamPrompt() {
 	}
 	outputRunPrompt.value = entry
 	await saveRecord(entry)
-
-	toast.add({
-		title: 'Stream completed',
-		description: `Collected ${runs.length} run(s)`,
-		color: 'success',
-	})
 }
 
 // Load available models from API
@@ -275,12 +403,27 @@ async function handleLoadModel() {
 	try {
 		const res = await $fetch(`${apiBase}/prompt/models`)
 		const list = (res as any)?.models
-		if (Array.isArray(list) && list.length > 0) {
-			models.value = list
 
-			// If current model not in list, default to first.
-			if (!list.find((m: any) => m.value === model.value.value)) {
-				model.value = list[0]
+		// Validate server response
+		if (Array.isArray(list) && list.length > 0) {
+			// Normalize server models to task options
+			taskOptions.value = list.map((m: any) => ({
+				label: m.label || 'Task',
+				task: /image.*generation/i.test(m.label)
+					? 'image-generation'
+					: /vision/i.test(m.label)
+					? 'image-vision'
+					: /speech.*text/i.test(m.label)
+					? 'speech-to-text'
+					: /text.*speech/i.test(m.label)
+					? 'text-to-speech'
+					: 'text-generation',
+				model: m.value,
+			}))
+
+			// Default selection
+			if (taskOptions.value[0]) {
+				selectedTask.value = taskOptions.value[0]
 			}
 		}
 	} catch (e: any) {
@@ -293,6 +436,16 @@ async function handleLoadModel() {
 	} finally {
 		loadingModels.value = false
 	}
+}
+
+// Handle image file change
+const handleChangeImage = async (e: Event) => {
+	imageBase64.value = await handleFileReader(e)
+}
+
+// Handle audio file change
+const handleChangeAudio = async (e: Event) => {
+	audioBase64.value = await handleFileReader(e)
 }
 
 // Load history from Firestore
@@ -321,10 +474,144 @@ async function handleLoadHistory() {
 	}
 }
 
+// Save: Vision
+async function saveVisionRecord(entry: {
+	prompt?: string
+	imageUrl?: string
+	text: string
+	model: string
+	usage?: any
+	durationMs?: number
+}) {
+	try {
+		if (!db) return console.warn('[save vision] missing db')
+		await addDoc(collection(db, 'visionHistory'), {
+			...entry,
+			at: Date.now(),
+			createdAt: serverTimestamp(),
+		})
+		await handleLoadVisionHistory()
+	} catch (e: any) {
+		console.warn('[save vision] failed:', e?.message || e)
+	}
+}
+
+// Save: Transcription
+async function saveTranscriptionRecord(entry: {
+	text: string
+	model: string
+	durationMs?: number
+}) {
+	try {
+		if (!db) return console.warn('[save transcription] missing db')
+		await addDoc(collection(db, 'transcriptionHistory'), {
+			...entry,
+			at: Date.now(),
+			createdAt: serverTimestamp(),
+		})
+		await handleLoadTranscriptionHistory()
+	} catch (e: any) {
+		console.warn('[save transcription] failed:', e?.message || e)
+	}
+}
+
+// Save: TTS (metadata only; audio not persisted to avoid large docs)
+async function saveTTSRecord(entry: {
+	text: string
+	voice?: string
+	model: string
+	durationMs?: number
+}) {
+	try {
+		if (!db) return console.warn('[save tts] missing db')
+		await addDoc(collection(db, 'ttsHistory'), {
+			...entry,
+			at: Date.now(),
+			createdAt: serverTimestamp(),
+		})
+		await handleLoadTTSHistory()
+	} catch (e: any) {
+		console.warn('[save tts] failed:', e?.message || e)
+	}
+}
+
+// Save: Image Generation (metadata only)
+async function saveImageGenRecord(entry: { prompt: string; model: string; size?: string }) {
+	try {
+		if (!db) return console.warn('[save image gen] missing db')
+		await addDoc(collection(db, 'imageGenHistory'), {
+			...entry,
+			at: Date.now(),
+			createdAt: serverTimestamp(),
+		})
+		await handleLoadImageGenHistory()
+	} catch (e: any) {
+		console.warn('[save image gen] failed:', e?.message || e)
+	}
+}
+
+// Load: Vision
+async function handleLoadVisionHistory() {
+	try {
+		if (!db) return console.warn('[load vision] missing db')
+		const qs = await getDocs(collection(db, 'visionHistory'))
+		const list = qs.docs.map((d) => ({ id: d.id, ...d.data() })) as VisionHistory[]
+		visionHistory.value = Array.isArray(list) ? list : []
+	} catch (e: any) {
+		console.warn('[load vision] failed:', e?.message || e)
+	}
+}
+
+// Load: Transcriptions
+async function handleLoadTranscriptionHistory() {
+	try {
+		if (!db) return console.warn('[load transcription] missing db')
+		const qs = await getDocs(collection(db, 'transcriptionHistory'))
+		const list = qs.docs.map((d) => ({ id: d.id, ...d.data() })) as TranscriptionHistory[]
+		transcriptionHistory.value = Array.isArray(list) ? list : []
+	} catch (e: any) {
+		console.warn('[load transcription] failed:', e?.message || e)
+	}
+}
+
+// Load: TTS
+async function handleLoadTTSHistory() {
+	try {
+		if (!db) return console.warn('[load tts] missing db')
+		const qs = await getDocs(collection(db, 'ttsHistory'))
+		const list = qs.docs.map((d) => ({ id: d.id, ...d.data() })) as TTSHistory[]
+		ttsHistory.value = Array.isArray(list) ? list : []
+	} catch (e: any) {
+		console.warn('[load tts] failed:', e?.message || e)
+	}
+}
+
+// Load: Image Generation
+async function handleLoadImageGenHistory() {
+	try {
+		if (!db) return console.warn('[load image gen] missing db')
+		const qs = await getDocs(collection(db, 'imageGenHistory'))
+		const list = qs.docs.map((d) => ({ id: d.id, ...d.data() })) as ImageGenHistory[]
+		imageGenHistory.value = Array.isArray(list) ? list : []
+	} catch (e: any) {
+		console.warn('[load image gen] failed:', e?.message || e)
+	}
+}
+
+async function handleLoadAllHistory() {
+	await Promise.all([
+		handleLoadHistory(),
+		handleLoadVisionHistory(),
+		handleLoadTranscriptionHistory(),
+		handleLoadTTSHistory(),
+		handleLoadImageGenHistory(),
+	])
+}
+
 // Load models and history on mount
 onMounted(async () => {
 	await handleLoadModel()
-	await handleLoadHistory()
+	await handleLoadAllHistory()
 })
 
 // Copy text to clipboard
@@ -345,6 +632,26 @@ function copyText(text: string) {
 		})
 	}
 }
+
+const handleClearOutput = () => {
+	responseText.value = ''
+	outputRunPrompt.value = undefined
+	generatedImageUrl.value = ''
+	ttsAudioUrl.value = ''
+
+	error.value = null
+}
+
+watch(
+	() => error.value,
+	(err) => {
+		if (err) {
+			setTimeout(() => {
+				error.value = ''
+			}, 5000)
+		}
+	}
+)
 </script>
 
 <template>
@@ -368,20 +675,21 @@ function copyText(text: string) {
 					<!-- Models -->
 					<div>
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-sm">Model</span>
+							<strong class="text-sm">Task</strong>
+							<span class="text-xs text-gray-500">{{ selectedTask.model }}</span>
 						</div>
 						<USelectMenu
-							v-model="model"
-							:items="models"
+							v-model="selectedTask"
+							:items="taskOptions"
 							:disabled="loadingModels"
 							:loading="loadingModels"
 							class="w-full"
 						/>
 					</div>
 					<!-- Temperatures -->
-					<div>
+					<div v-if="selectedTask.task === 'text-generation'">
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-sm">Temperatures</span>
+							<strong class="text-sm">Temperatures</strong>
 							<span class="text-xs text-gray-500">{{
 								temperatureSelection.map((t) => t.label).join(', ') || 'None'
 							}}</span>
@@ -394,26 +702,85 @@ function copyText(text: string) {
 						/>
 					</div>
 					<!-- Samples -->
-					<div>
+					<div v-if="selectedTask.task === 'text-generation' && !useStreaming">
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-sm">Samples</span>
+							<strong class="text-sm">Samples</strong>
 							<span class="text-sm">{{ samples }}</span>
 						</div>
 						<USlider v-model="samples" :min="1" :max="5" :step="1" />
 					</div>
-					<!-- Max Tokens -->
-					<div>
+					<!-- Max Tokens (text & vision only) -->
+					<div v-if="['text-generation', 'image-vision'].includes(selectedTask.task)">
 						<div class="flex items-center justify-between mb-1">
-							<span class="text-sm">Max Tokens</span>
+							<strong class="text-sm">Max Tokens</strong>
 							<span class="text-sm">{{ maxTokens }}</span>
 						</div>
 						<USlider v-model="maxTokens" :min="32" :max="1024" :step="16" />
 					</div>
 				</div>
 
+				<!-- Task-specific inputs -->
+				<div class="grid gap-4">
+					<!-- Text Generation has no additional media inputs -->
+
+					<div v-if="selectedTask.task === 'image-vision'">
+						<div class="grid gap-6">
+							<div class="flex flex-col w-full">
+								<strong>Image URL</strong>
+								<div class="text-xs text-gray-600 mb-3 mt-1">
+									Enter the URL of the image to use with the prompt.
+								</div>
+								<UInput v-model="imageUrl" placeholder="https://example.com/image.jpg" />
+							</div>
+							<div class="flex flex-col w-full">
+								<strong>Or Upload Image</strong>
+								<div class="text-xs text-gray-600 mb-3 mt-1">
+									Upload an image file to use with the prompt.
+								</div>
+								<UInput type="file" accept="image/*" @change="handleChangeImage" />
+							</div>
+						</div>
+					</div>
+
+					<div v-if="selectedTask.task === 'speech-to-text'">
+						<div class="grid gap-3">
+							<div class="flex flex-col w-full">
+								<strong>Upload Audio</strong>
+								<div class="text-xs text-gray-600 mb-3 mt-1">
+									Upload an audio file to use with the prompt.
+								</div>
+								<UInput type="file" accept="audio/*" @change="handleChangeAudio" />
+							</div>
+						</div>
+					</div>
+
+					<div v-if="selectedTask.task === 'text-to-speech'">
+						<div class="grid gap-3">
+							<div class="flex flex-col w-full">
+								<strong>Voice</strong>
+								<div class="text-xs text-gray-600 mb-3 mt-1">
+									Enter the voice to use with the prompt.
+								</div>
+								<UInput v-model="ttsVoice" placeholder="alloy" />
+							</div>
+						</div>
+					</div>
+
+					<div v-if="selectedTask.task === 'image-generation'">
+						<div class="grid gap-3">
+							<div class="flex flex-col w-full">
+								<strong>Size</strong>
+								<div class="text-xs text-gray-600 mb-3 mt-1">Larger sizes may take longer.</div>
+								<USelectMenu v-model="imageSize" :items="imageSizeOptions" />
+							</div>
+						</div>
+					</div>
+				</div>
+
 				<!-- Run Prompt Button -->
-				<div class="flex gap-3 items-center">
+				<div class="flex gap-3 items-center justify-end">
 					<USwitch
+						v-if="selectedTask.task === 'text-generation'"
 						v-model="useStreaming"
 						checked-icon="i-heroicons-wifi"
 						unchecked-icon="i-heroicons-no-symbol"
@@ -428,7 +795,7 @@ function copyText(text: string) {
 						color="neutral"
 						variant="soft"
 						icon="i-heroicons-x-mark"
-						@click="responseText = ''"
+						@click="handleClearOutput"
 						>Clear Output</UButton
 					>
 				</div>
@@ -444,6 +811,16 @@ function copyText(text: string) {
 				<!-- Response Output -->
 				<UCard v-if="responseText" class="bg-gray-50">
 					<pre class="whitespace-pre-wrap text-sm">{{ responseText }}</pre>
+				</UCard>
+
+				<!-- Image Output -->
+				<UCard v-if="generatedImageUrl" class="bg-white">
+					<img :src="generatedImageUrl" alt="Generated image" class="max-w-full" />
+				</UCard>
+
+				<!-- TTS Audio Output -->
+				<UCard v-if="ttsAudioUrl" class="bg-white">
+					<audio :src="ttsAudioUrl" controls></audio>
 				</UCard>
 
 				<!-- Run Output -->
@@ -490,8 +867,8 @@ function copyText(text: string) {
 					color="neutral"
 					variant="soft"
 					icon="i-heroicons-arrow-path"
-					@click="handleLoadHistory()"
-					>Reload History</UButton
+					@click="handleLoadAllHistory()"
+					>Reload All History</UButton
 				>
 			</div>
 			<div class="grid gap-3">
@@ -548,6 +925,112 @@ function copyText(text: string) {
 				</div>
 				<div v-else>
 					<p class="text-sm text-gray-500">No history available.</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Vision History -->
+		<div class="mt-6">
+			<div class="flex items-center justify-between mb-1">
+				<strong>Vision History</strong>
+			</div>
+			<div class="grid gap-3">
+				<div v-if="visionHistory.length > 0" class="space-y-3 mt-2">
+					<UCard v-for="item in visionHistory" :key="item.at">
+						<div class="flex items-center justify-between text-sm mb-2">
+							<span>Model: {{ item.model }}</span>
+							<span>{{ new Date(item.at).toLocaleString() }}</span>
+						</div>
+						<div v-if="item.prompt" class="mb-2">
+							<strong>Prompt</strong>
+							<div class="text-sm whitespace-pre-wrap">{{ item.prompt }}</div>
+						</div>
+						<div v-if="item.imageUrl" class="mb-2">
+							<strong>Image</strong>
+							<div class="text-xs text-gray-600">{{ item.imageUrl }}</div>
+						</div>
+						<div>
+							<strong>Description</strong>
+							<div class="text-sm whitespace-pre-wrap">{{ item.text }}</div>
+						</div>
+					</UCard>
+				</div>
+				<div v-else>
+					<p class="text-sm text-gray-500">No vision history available.</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Transcription History -->
+		<div class="mt-6">
+			<div class="flex items-center justify-between mb-1">
+				<strong>Transcription History</strong>
+			</div>
+			<div class="grid gap-3">
+				<div v-if="transcriptionHistory.length > 0" class="space-y-3 mt-2">
+					<UCard v-for="item in transcriptionHistory" :key="item.at">
+						<div class="flex items-center justify-between text-sm mb-2">
+							<span>Model: {{ item.model }}</span>
+							<span>{{ new Date(item.at).toLocaleString() }}</span>
+						</div>
+						<div>
+							<strong>Text</strong>
+							<div class="text-sm whitespace-pre-wrap">{{ item.text }}</div>
+						</div>
+					</UCard>
+				</div>
+				<div v-else>
+					<p class="text-sm text-gray-500">No transcriptions yet.</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- TTS History -->
+		<div class="mt-6">
+			<div class="flex items-center justify-between mb-1">
+				<strong>TTS History</strong>
+			</div>
+			<div class="grid gap-3">
+				<div v-if="ttsHistory.length > 0" class="space-y-3 mt-2">
+					<UCard v-for="item in ttsHistory" :key="item.at">
+						<div class="flex items-center justify-between text-sm mb-2">
+							<span>Model: {{ item.model }} • Voice: {{ item.voice || 'default' }}</span>
+							<span>{{ new Date(item.at).toLocaleString() }}</span>
+						</div>
+						<div>
+							<strong>Text</strong>
+							<div class="text-sm whitespace-pre-wrap">{{ item.text }}</div>
+						</div>
+						<div class="text-xs text-gray-500 mt-1">Audio not persisted.</div>
+					</UCard>
+				</div>
+				<div v-else>
+					<p class="text-sm text-gray-500">No TTS items yet.</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Image Generation History -->
+		<div class="mt-6">
+			<div class="flex items-center justify-between mb-1">
+				<strong>Image Generation History</strong>
+			</div>
+			<div class="grid gap-3">
+				<div v-if="imageGenHistory.length > 0" class="space-y-3 mt-2">
+					<UCard v-for="item in imageGenHistory" :key="item.at">
+						<div class="flex items-center justify-between text-sm mb-2">
+							<span>Model: {{ item.model }} • Size: {{ item.size || 'default' }}</span>
+							<span>{{ new Date(item.at).toLocaleString() }}</span>
+						</div>
+						<div>
+							<strong>Prompt</strong>
+							<div class="text-sm whitespace-pre-wrap">{{ item.prompt }}</div>
+						</div>
+						<div class="text-xs text-gray-500 mt-1">Preview not persisted.</div>
+					</UCard>
+				</div>
+				<div v-else>
+					<p class="text-sm text-gray-500">No image generations yet.</p>
 				</div>
 			</div>
 		</div>

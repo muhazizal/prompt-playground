@@ -1,5 +1,12 @@
-import { getClient, DEFAULT_CHAT_MODELS } from '../core/prompt-core.mjs'
-import { chatWithTemperatures, listModels } from '../core/prompt-core.mjs'
+import { getClient } from '../core/prompt-core.mjs'
+import {
+	chatWithTemperatures,
+	listModels,
+	visionDescribe,
+	speechToTextTranscribe,
+	textToSpeechSynthesize,
+	imageGenerate,
+} from '../core/prompt-core.mjs'
 
 import { createStreamRateLimit } from '../middleware/rateLimit.mjs'
 import { validateQuery, validateBody } from '../middleware/validate.mjs'
@@ -34,6 +41,28 @@ export function registerPromptRoutes(app) {
 			} catch (err) {
 				const msg = err?.message || String(err)
 				sendError(res, 500, 'SERVER_ERROR', msg)
+			}
+		}
+	)
+
+	// Image generation route
+	app.post(
+		'/prompt/image-generation',
+		requireApiKey(),
+		...validateBody({
+			prompt: { in: ['body'], optional: false, isString: true },
+			model: { in: ['body'], optional: true, isString: true },
+			size: { in: ['body'], optional: true, isString: true },
+			format: { in: ['body'], optional: true, isString: true },
+		}),
+		async (req, res) => {
+			try {
+				const client = getClient(req.aiApiKey)
+				const data = await imageGenerate(client, req.body || {})
+				res.json(data)
+			} catch (err) {
+				const msg = err?.message || String(err)
+				sendError(res, 400, 'INVALID_INPUT', msg)
 			}
 		}
 	)
@@ -124,12 +153,74 @@ export function registerPromptRoutes(app) {
 
 	// Dynamic model list with fallback
 	app.get('/prompt/models', requireApiKey(), async (req, res) => {
-		try {
-			const client = getClient(req.aiApiKey)
-			const models = await listModels(client)
-			res.json({ models })
-		} catch {
-			res.json({ models: DEFAULT_CHAT_MODELS })
-		}
+		const models = await listModels()
+		res.json({ models })
 	})
+
+	// Image vision route
+	app.post(
+		'/prompt/vision',
+		requireApiKey(),
+		...validateBody({
+			imageUrl: { in: ['body'], optional: true, isString: true },
+			imageBase64: { in: ['body'], optional: true, isString: true },
+			prompt: { in: ['body'], optional: true, isString: true },
+			model: { in: ['body'], optional: true, isString: true },
+			maxTokens: { in: ['body'], optional: true, isInt: { options: { min: 16, max: 4000 } } },
+			temperature: { in: ['body'], optional: true, isFloat: { options: { min: 0, max: 2 } } },
+		}),
+		async (req, res) => {
+			try {
+				const client = getClient(req.aiApiKey)
+				const data = await visionDescribe(client, req.body || {})
+				res.json(data)
+			} catch (err) {
+				const msg = err?.message || String(err)
+				sendError(res, 400, 'INVALID_INPUT', msg)
+			}
+		}
+	)
+
+	// Speech to text route
+	app.post(
+		'/prompt/speech-to-text',
+		requireApiKey(),
+		...validateBody({
+			audioBase64: { in: ['body'], optional: false, isString: true },
+			model: { in: ['body'], optional: true, isString: true },
+			language: { in: ['body'], optional: true, isString: true },
+		}),
+		async (req, res) => {
+			try {
+				const client = getClient(req.aiApiKey)
+				const data = await speechToTextTranscribe(client, req.body || {})
+				res.json(data)
+			} catch (err) {
+				const msg = err?.message || String(err)
+				sendError(res, 400, 'INVALID_INPUT', msg)
+			}
+		}
+	)
+
+	// Text to speech route
+	app.post(
+		'/prompt/text-to-speech',
+		requireApiKey(),
+		...validateBody({
+			text: { in: ['body'], optional: false, isString: true },
+			model: { in: ['body'], optional: true, isString: true },
+			voice: { in: ['body'], optional: true, isString: true },
+			format: { in: ['body'], optional: true, isString: true },
+		}),
+		async (req, res) => {
+			try {
+				const client = getClient(req.aiApiKey)
+				const data = await textToSpeechSynthesize(client, req.body || {})
+				res.json(data)
+			} catch (err) {
+				const msg = err?.message || String(err)
+				sendError(res, 400, 'INVALID_INPUT', msg)
+			}
+		}
+	)
 }

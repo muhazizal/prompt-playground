@@ -29,10 +29,61 @@ export type Evaluation = {
 
 // NoteResult is the result of processing a note.
 export type NoteResult = {
-	file: string
-	summary: string
-	tags: string[]
-	usage?: any
-	evaluation?: Evaluation
-	model?: string
+  file: string
+  summary: string
+  tags: string[]
+  usage?: any
+  evaluation?: Evaluation
+  model?: string
+}
+
+// VisionHistory stores results of an image-vision task
+export type VisionHistory = {
+  id?: string
+  prompt?: string
+  imageUrl?: string
+  imageBase64?: string
+  text: string
+  model: string
+  usage?: any
+  durationMs?: number
+  at: number
+}
+
+// TranscriptionHistory stores results of a speech-to-text task
+export type TranscriptionHistory = {
+  id?: string
+  text: string
+  model: string
+  durationMs?: number
+  at: number
+}
+
+// TTSHistory stores results of a text-to-speech task
+export type TTSHistory = {
+  id?: string
+  text: string
+  voice?: string
+  model: string
+  audioBase64?: string
+  contentType?: string
+  durationMs?: number
+  at: number
+}
+
+// TaskOption is an option for a task.
+export type TaskOption = {
+	label: string
+	 task: 'text-generation' | 'image-generation' | 'image-vision' | 'speech-to-text' | 'text-to-speech'
+	model: string
+}
+
+// ImageGenHistory stores results of an image generation task (metadata only)
+export type ImageGenHistory = {
+  id?: string
+  prompt: string
+  model: string
+  size?: string
+  // Avoid storing large binary in Firestore; preview kept client-side only
+  at: number
 }

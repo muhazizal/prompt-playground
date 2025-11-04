@@ -24,11 +24,14 @@ const ORIGINS = Array.from(
 	])
 )
 
-// Global middlewares: logging, request counter, CORS, JSON parser, rate limit
+// Global middlewares: logging, request counter, CORS, JSON/urlencoded parsers with higher limits, rate limit
 app.use(createLoggingMiddleware())
 app.use(createRequestCounterMiddleware())
 app.use(cors({ origin: ORIGINS }))
-app.use(express.json())
+// Increase body size limits to avoid 413 for base64 image/audio payloads
+const BODY_LIMIT = process.env.JSON_LIMIT || '5mb'
+app.use(express.json({ limit: BODY_LIMIT }))
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }))
 app.use(createRateLimitMiddleware({ windowMs: 60_000, max: 120 }))
 
 registerNotesRoutes(app)
