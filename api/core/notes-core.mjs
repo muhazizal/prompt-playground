@@ -414,3 +414,50 @@ export async function evaluateSummary(client, text, summary, { model = DEFAULT_M
 
 	return { coverage, concision, formatting, factuality, feedback, usage: completion?.usage || null }
 }
+
+// Basic exponential backoff with jitter
+async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
+	let attempt = 0
+
+	// Retry loop with exponential backoff
+	while (true) {
+		try {
+			return await fn()
+		} catch (err) {
+			attempt++
+
+			if (attempt > retries) throw err
+
+			// Add jitter to avoid thundering herd problem
+			const isRateLimited = err && (err.status === 429 || /rate limit/i.test(err.message || ''))
+			const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
+
+			// Add extra delay if it's a rate-limit error
+			const waitMs = isRateLimited ? delay + 500 : delay
+			await new Promise((r) => setTimeout(r, waitMs))
+		}
+	}
+}
+
+// Simple concurrency limiter for bulk processing
+export async function processWithConcurrency(items, limit, handler) {
+	const queue = [...items]
+	const results = []
+
+	// Process items in parallel with concurrency limit
+	const workers = new Array(Math.min(limit, queue.length)).fill(0).map(async () => {
+		while (queue.length) {
+			const item = queue.shift()
+			try {
+				const r = await handler(item)
+				if (r) results.push(r)
+			} catch (err) {
+				results.push({ error: err?.message || String(err) })
+			}
+		}
+	})
+
+	await Promise.all(workers)
+
+	return results
+}

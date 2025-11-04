@@ -1,7 +1,12 @@
 import { getClient, DEFAULT_CHAT_MODELS } from '../core/prompt-core.mjs'
 import { chatWithTemperatures, listModels } from '../core/prompt-core.mjs'
+
 import { createStreamRateLimit } from '../middleware/rateLimit.mjs'
-import { validateQuery } from '../middleware/validate.mjs'
+import { validateQuery, validateBody } from '../middleware/validate.mjs'
+import { requireApiKey } from '../middleware/auth.mjs'
+
+import { sendError } from '../utils/http.mjs'
+
 import { inc } from '../metrics.mjs'
 
 /**
@@ -9,24 +14,35 @@ import { inc } from '../metrics.mjs'
  */
 export function registerPromptRoutes(app) {
 	// Chat completion with temperature control
-	app.post('/prompt/chat', async (req, res) => {
-		try {
-			const apiKey = process.env.OPENAI_API_KEY
-			if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' })
-
-			const client = getClient(apiKey)
-			const data = await chatWithTemperatures(client, req.body || {})
-			res.json(data)
-		} catch (err) {
-			const msg = err?.message || String(err)
-			res.status(500).json({ error: msg })
+	app.post(
+		'/prompt/chat',
+		requireApiKey(),
+		...validateBody({
+			prompt: { in: ['body'], optional: false, isString: true },
+			model: { in: ['body'], optional: true, isString: true },
+			temperature: { in: ['body'], optional: true, isFloat: { options: { min: 0, max: 2 } } },
+			maxTokens: { in: ['body'], optional: true, isInt: { options: { min: 1, max: 4000 } } },
+			n: { in: ['body'], optional: true, isInt: { options: { min: 1, max: 8 } } },
+			temperatures: { in: ['body'], optional: true, isArray: true },
+			'temperatures.*': { in: ['body'], optional: true, isFloat: { options: { min: 0, max: 2 } } },
+		}),
+		async (req, res) => {
+			try {
+				const client = getClient(req.aiApiKey)
+				const data = await chatWithTemperatures(client, req.body || {})
+				res.json(data)
+			} catch (err) {
+				const msg = err?.message || String(err)
+				sendError(res, 500, 'SERVER_ERROR', msg)
+			}
 		}
-	})
+	)
 
 	// Chat completion stream with temperature control
 	const streamLimiter = createStreamRateLimit({ windowMs: 5 * 60_000, max: 30 })
 	app.get(
-		'/api/chat/stream',
+		'/prompt/chat/stream',
+		requireApiKey(),
 		streamLimiter,
 		// Basic query validation
 		...validateQuery({
@@ -42,10 +58,7 @@ export function registerPromptRoutes(app) {
 		}),
 		async (req, res) => {
 			try {
-				const apiKey = process.env.OPENAI_API_KEY
-				if (!apiKey) return res.status(500).json({ error: 'Missing OPENAI_API_KEY' })
-
-				const client = new OpenAI({ apiKey })
+				const client = getClient(req.aiApiKey)
 				const prompt = String(req.query.prompt || '')
 				const model = String(req.query.model || 'gpt-4o-mini')
 				const temperature =
@@ -53,7 +66,7 @@ export function registerPromptRoutes(app) {
 				const maxTokens = req.query.maxTokens !== undefined ? Number(req.query.maxTokens) : 400
 
 				if (!prompt.trim())
-					return res.status(400).json({ error: 'prompt must be a non-empty string' })
+					return sendError(res, 400, 'INVALID_INPUT', 'prompt must be a non-empty string')
 
 				// SSE headers
 				res.setHeader('Content-Type', 'text/event-stream')
@@ -98,7 +111,10 @@ export function registerPromptRoutes(app) {
 				try {
 					res.write(
 						`event: server_error\n` +
-							`data: ${JSON.stringify({ error: err?.message || String(err) })}\n\n`
+							`data: ${JSON.stringify({
+								error: err?.message || String(err),
+								code: 'SERVER_ERROR',
+							})}\n\n`
 					)
 					res.end()
 				} catch {}
