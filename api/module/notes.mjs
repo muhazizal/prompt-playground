@@ -12,7 +12,7 @@ import {
 	DEFAULT_MODEL,
 	getCachedSummary,
 	setCachedSummary,
-} from './notes-core.mjs'
+} from '../core/notes-core.mjs'
 
 // Basic exponential backoff with jitter
 async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {

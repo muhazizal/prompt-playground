@@ -1,13 +1,20 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import { registerNotesRoutes } from './notes.mjs'
-import { registerPromptRoutes } from './prompt.mjs'
+
+import { registerMetricsRoute, createRequestCounterMiddleware } from './metrics.mjs'
+
+import { registerNotesRoutes } from './module/notes.mjs'
+import { registerPromptRoutes } from './module/prompt.mjs'
+
+import { createLoggingMiddleware } from './middleware/logging.mjs'
+import { createRateLimitMiddleware } from './middleware/rateLimit.mjs'
 
 dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 4000
+
 // Allow multiple dev origins by default and merge with WEB_ORIGIN
 const ORIGINS = Array.from(
 	new Set([
@@ -17,15 +24,16 @@ const ORIGINS = Array.from(
 	])
 )
 
+// Global middlewares: logging, request counter, CORS, JSON parser, rate limit
+app.use(createLoggingMiddleware())
+app.use(createRequestCounterMiddleware())
 app.use(cors({ origin: ORIGINS }))
 app.use(express.json())
+app.use(createRateLimitMiddleware({ windowMs: 60_000, max: 120 }))
 
 registerNotesRoutes(app)
 registerPromptRoutes(app)
-
-app.get('/health', (_req, res) => {
-	res.json({ ok: true })
-})
+registerMetricsRoute(app)
 
 // Chat and models routes are now registered via prompt.mjs
 
