@@ -506,7 +506,7 @@ function copyText(text: string) {
 								r?.usage?.total_tokens ??
 								(r?.usage?.prompt_tokens ?? 0) + (r?.usage?.completion_tokens ?? 0)
 							}}
-							<div class="mt-1 flex items-center gap-2">
+							<div class="my-1 flex items-center gap-2">
 								<UBadge size="xs" color="neutral" variant="soft"
 									>Model {{ r.model ?? 'gpt-4o-mini' }}</UBadge
 								>
@@ -552,7 +552,7 @@ function copyText(text: string) {
 							}}
 						</div>
 					</div>
-					<div class="mt-1 flex items-center gap-2">
+					<div class="my-1 flex items-center gap-2">
 						<UBadge size="xs" color="neutral" variant="soft"
 							>Model {{ h.model ?? 'gpt-4o-mini' }}</UBadge
 						>
