@@ -416,7 +416,7 @@ export async function evaluateSummary(client, text, summary, { model = DEFAULT_M
 }
 
 // Basic exponential backoff with jitter
-async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
+export async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
 	let attempt = 0
 
 	// Retry loop with exponential backoff

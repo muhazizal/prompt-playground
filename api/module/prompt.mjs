@@ -123,12 +123,9 @@ export function registerPromptRoutes(app) {
 	)
 
 	// Dynamic model list with fallback
-	app.get('/prompt/models', async (_req, res) => {
+	app.get('/prompt/models', requireApiKey(), async (req, res) => {
 		try {
-			const apiKey = process.env.OPENAI_API_KEY
-			if (!apiKey) return res.json({ models: DEFAULT_CHAT_MODELS })
-
-			const client = getClient(apiKey)
+			const client = getClient(req.aiApiKey)
 			const models = await listModels(client)
 			res.json({ models })
 		} catch {
