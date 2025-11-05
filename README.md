@@ -115,6 +115,11 @@ Environment:
   - `OPENAI_API_KEY=your_key_here`
   - `JSON_LIMIT=5mb` (optional; increase if sending large base64 image/audio)
   - Optional: `WEB_ORIGIN=http://localhost:3000,http://localhost:3002`
+  - Chat memory (optional; Redis-backed)
+    - `MEMORY_STORE=redis` (set to `redis` to enable Redis; otherwise file-backed)
+    - `REDIS_URL=redis://localhost:6379` (your Redis connection URL)
+    - `MEMORY_TTL_SECONDS=86400` (per-session TTL; default 1 day)
+    - `MEMORY_MAX_ITEMS=200` (max messages kept per session)
 - Frontend: `.env` in `web` (or export vars before running)
   - `API_BASE=http://localhost:4000`
   - `NUXT_PUBLIC_FIREBASE_API_KEY=...`
@@ -177,7 +182,6 @@ API Endpoints:
 - Notes
   - `GET /notes/list` → `{ files: Array<{ name }> }`
   - `POST /notes/process` → `{ results: Array<{ file, summary, model, tags, usage, evaluation }> }`
-  - `POST /notes/summarize` → `{ summary, model, tags, usage, evaluation }`
   - `GET /notes/summarize-stream?path=<file>` → SSE events: `start`, `summary`, `result`, `usage`, `evaluation`, `end`, `server_error`
   - `GET /notes/tags` / `POST /notes/tags` → load/save tag candidates
 
@@ -209,6 +213,7 @@ Cost ≈ (prompt_tokens / 1,000,000) * INPUT_PRICE + (completion_tokens / 1,000,
 - Example (gpt-4o): INPUT ≈ $5.00 / 1M; OUTPUT ≈ $15.00 / 1M.
 
 Firestore guidance:
+
 - Store metadata only; avoid large binaries.
 - Paginate reads (page size ~10); monitor daily quotas.
 - Apply least-privilege rules; segregate user data.
@@ -224,6 +229,86 @@ Firestore guidance:
 - OpenAI SDK: https://github.com/openai/openai-node
 - Firebase Firestore: https://firebase.google.com/docs/firestore
 
+## Chat Memory
+
+- Overview
+
+  - Persistent session memory with optional Redis backend and disk fallback at `cache/chat_memory.json`.
+  - Model-aware token budget is computed as `contextWindow(model) - maxTokens - safety` (safety ≈ `1000`). Override via `contextBudgetTokens`.
+  - Summarization fallback compresses overflow history into a compact system message instead of dropping it.
+  - Per-user isolation via `X-User-Id` header; memory keys are `userId:sessionId`.
+
+- Request fields (POST `/prompt/chat`)
+
+  - `useMemory` (boolean) — enable memory.
+  - `sessionId` (string) — logical conversation id.
+  - `reset` (boolean) — clear session before the run.
+  - `memorySize` (int) — max recent messages fetched from store.
+  - `contextBudgetTokens` (int) — override budget; otherwise computed per model.
+  - `context` (object) — arbitrary data wired into a system message via `serializeContextToSystem(context)`.
+  - `summarizeOverflow` (boolean) — summarize trimmed history into a system message.
+  - `summaryMaxTokens` (int) — token cap for summary generation.
+
+- Headers
+
+  - `X-API-Key` — OpenAI API key (or use `OPENAI_API_KEY` in env).
+  - `X-User-Id` — optional user id to isolate memory across users.
+  - `X-Session-Id` — optional session id header if not using body `sessionId`.
+
+- Redis configuration (optional)
+  - Set `MEMORY_STORE=redis` and `REDIS_URL=redis://...` to enable Redis.
+  - Use `MEMORY_TTL_SECONDS` to enforce per-session auto-expiration.
+  - Use `MEMORY_MAX_ITEMS` to cap list size per session; older entries are trimmed.
+
+### Examples
+
+```bash
+# Basic chat with memory
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Hi, I am Bob.","useMemory":true,"sessionId":"readme-demo"}' | jq
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Remind me of my name","useMemory":true,"sessionId":"readme-demo"}' | jq
+
+# Per-user isolation (headers)
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Id: user123' \
+  -H 'X-Session-Id: project-alpha' \
+  -d '{"prompt":"Track my tasks","useMemory":true}' | jq
+
+# Context wiring (serialized into a system message)
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt":"Summarize next steps",
+    "useMemory":true,
+    "sessionId":"ctx-demo",
+    "context": {"project":"ACME","userPreferences":{"tone":"friendly"}}
+  }' | jq
+
+# Model-aware budget override and summarization fallback
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt":"Continue",
+    "useMemory":true,
+    "sessionId":"big-convo",
+    "contextBudgetTokens": 4000,
+    "summarizeOverflow": true,
+    "summaryMaxTokens": 128
+  }' | jq
+
+# Reset memory
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Start fresh","useMemory":true,"sessionId":"readme-demo","reset":true}' | jq
+
+# Streaming with memory and summarization
+curl -s -N 'http://localhost:4000/prompt/chat/stream?prompt=Hello&model=gpt-4o-mini&temperature=0.2&maxTokens=128&useMemory=true&sessionId=stream-demo&summarizeOverflow=true&summaryMaxTokens=128'
+```
+
 ## Quick Tests
 
 ```bash
@@ -234,6 +319,14 @@ curl -s http://localhost:4000/prompt/models | jq
 curl -s -X POST http://localhost:4000/prompt/chat \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"Explain embeddings in 2 sentences","temperatures":[0.2,0.7],"n":1,"maxTokens":120}' | jq
+
+# Chat with memory enabled
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Hi, I am Bob.","useMemory":true,"sessionId":"readme-demo"}' | jq
+curl -s -X POST http://localhost:4000/prompt/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Remind me of my name","useMemory":true,"sessionId":"readme-demo"}' | jq
 
 # Stream chat (SSE)
 curl -s -N 'http://localhost:4000/prompt/chat/stream?prompt=Say%20hi&model=gpt-4o-mini&temperature=0.2&maxTokens=64'

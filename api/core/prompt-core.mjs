@@ -25,7 +25,15 @@ export function getClient(apiKey) {
  */
 export async function chatWithTemperatures(
 	client,
-	{ prompt, model = 'gpt-4o-mini', temperature = 0.3, maxTokens = 200, n = 1, temperatures } = {}
+	{
+		prompt,
+		model = 'gpt-4o-mini',
+		temperature = 0.3,
+		maxTokens = 200,
+		n = 1,
+		temperatures,
+		baseMessages,
+	} = {}
 ) {
 	if (!prompt || typeof prompt !== 'string') {
 		throw new Error('Missing prompt')
@@ -37,6 +45,14 @@ export async function chatWithTemperatures(
 			? temperatures.map(Number).filter((t) => !Number.isNaN(t))
 			: [Number(temperature)]
 
+	// Build messages with optional baseMessages (e.g., memory + system + user)
+	const defaultMessages = [
+		{ role: 'system', content: 'You are a helpful assistant.' },
+		{ role: 'user', content: prompt },
+	]
+	const messages =
+		Array.isArray(baseMessages) && baseMessages.length > 0 ? baseMessages : defaultMessages
+
 	// Run completions for each temperature
 	const runs = []
 	for (const t of tempsToRun) {
@@ -46,10 +62,7 @@ export async function chatWithTemperatures(
 			temperature: t,
 			n: Math.max(1, Number(n) || 1),
 			max_tokens: maxTokens,
-			messages: [
-				{ role: 'system', content: 'You are a helpful assistant.' },
-				{ role: 'user', content: prompt },
-			],
+			messages,
 		})
 		const durationMs = Date.now() - started
 		const choices = (completion.choices || []).map((c, idx) => ({
@@ -60,6 +73,59 @@ export async function chatWithTemperatures(
 	}
 
 	return { prompt, model, maxTokens, runs }
+}
+
+/**
+ * Model context window sizes (approximate). Defaults to 8192 if unknown.
+ */
+export function getModelContextWindow(model) {
+	const M = String(model || '').toLowerCase()
+	const MAP = {
+		'gpt-4o-mini': 128000,
+		'gpt-4o-mini-tts': 128000,
+		'gpt-image-1': 8192,
+		'whisper-1': 8192,
+	}
+	return MAP[M] || 8192
+}
+
+/**
+ * Summarize a sequence of chat messages into a compact system context string.
+ * Returns a short summary suitable for inclusion as a system message.
+ */
+export async function summarizeMessages(
+	client,
+	messages,
+	{ model = 'gpt-4o-mini', maxTokens = 200 } = {}
+) {
+	const asText = (Array.isArray(messages) ? messages : [])
+		.map((m) => {
+			const role = m?.role || 'user'
+			const contentStr = Array.isArray(m?.content)
+				? m.content.map((c) => (typeof c?.text === 'string' ? c.text : JSON.stringify(c))).join(' ')
+				: String(m?.content ?? '')
+			return `${role.toUpperCase()}: ${contentStr}`
+		})
+		.join('\n')
+
+	const completion = await client.chat.completions.create({
+		model,
+		temperature: 0,
+		max_tokens: maxTokens,
+		messages: [
+			{
+				role: 'system',
+				content:
+					'You compress conversation history into key facts, decisions, intents, and unresolved questions. Be concise and factual. Return plain text only.',
+			},
+			{
+				role: 'user',
+				content: `Summarize the following conversation in 4-6 bullet points focusing on facts, context, and current objectives.\n\n${asText}`,
+			},
+		],
+	})
+	const summary = completion?.choices?.[0]?.message?.content || ''
+	return String(summary || '').trim()
 }
 
 /**

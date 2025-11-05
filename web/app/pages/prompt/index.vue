@@ -57,9 +57,31 @@ const imageSize = ref<string>('1024x1024')
 const outputRunPrompt = ref<HistoryEntry>()
 const useStreaming = ref(false)
 
+// Context & Memory controls (chat)
+const useMemory = ref(true)
+const sessionId = ref('chat')
+const memorySize = ref(30)
+const contextBudgetTokens = ref<number | null>(null)
+const summarizeOverflow = ref(true)
+const summaryMaxTokens = ref(200)
+const resetMemory = ref(false)
+const contextJson = ref<string>('')
+
 // Init Firestore
 const nuxt = useNuxtApp()
 const db = (nuxt as any).$db as Firestore | undefined
+const auth = (nuxt as any).$auth as any
+const userId = computed<string | null>(() => (auth?.currentUser?.uid as string) || null)
+
+function parseContext(text: string): any | null {
+	if (!text || !text.trim()) return null
+	try {
+		const obj = JSON.parse(text)
+		return obj && typeof obj === 'object' ? obj : null
+	} catch {
+		return null
+	}
+}
 
 // Run a prompt and save the result to Firestore
 async function runPrompt() {
@@ -88,8 +110,26 @@ async function runPrompt() {
 						? temperatureSelection.value.map((t) => t.value)
 						: [0.5]
 
+					// Context & Memory wiring
+					const sid = userId.value ? `${userId.value}:${sessionId.value}` : sessionId.value
+					const parsedCtx = parseContext(contextJson.value)
+					Object.assign(body, {
+						useMemory: useMemory.value,
+						sessionId: sid,
+						reset: resetMemory.value,
+						memorySize: memorySize.value,
+						summarizeOverflow: summarizeOverflow.value,
+						summaryMaxTokens: summaryMaxTokens.value,
+					})
+					if (parsedCtx) body.context = parsedCtx
+					if (contextBudgetTokens.value) body.contextBudgetTokens = contextBudgetTokens.value
+
 					// Run the prompt
-					const res = await $fetch(`${apiBase}/prompt/chat`, { method: 'POST', body })
+					const res = await $fetch(`${apiBase}/prompt/chat`, {
+						method: 'POST',
+						body,
+						headers: userId.value ? { 'x-user-id': userId.value } : undefined,
+					})
 					const data = res as any
 
 					// Process the response
@@ -240,6 +280,19 @@ function streamOnce(temp: number) {
 			`&model=${encodeURIComponent(model.value.value)}` +
 			`&temperature=${encodeURIComponent(temp)}` +
 			`&maxTokens=${encodeURIComponent(maxTokens.value)}`
+
+		// Append context & memory controls for SSE
+		const sid = userId.value ? `${userId.value}:${sessionId.value}` : sessionId.value
+		url += `&useMemory=${encodeURIComponent(String(useMemory.value))}`
+		url += `&sessionId=${encodeURIComponent(sid)}`
+		url += `&memorySize=${encodeURIComponent(memorySize.value)}`
+		url += `&summarizeOverflow=${encodeURIComponent(String(summarizeOverflow.value))}`
+		url += `&summaryMaxTokens=${encodeURIComponent(summaryMaxTokens.value)}`
+		if (resetMemory.value) url += `&reset=true`
+		if (contextBudgetTokens.value)
+			url += `&contextBudgetTokens=${encodeURIComponent(contextBudgetTokens.value)}`
+		if (contextJson.value && contextJson.value.trim())
+			url += `&context=${encodeURIComponent(contextJson.value)}`
 
 		const es = new EventSource(url)
 
@@ -599,18 +652,21 @@ watch(
 			<div class="grid gap-6">
 				<!-- Prompt Input -->
 				<div class="flex flex-col w-full">
-					<strong>Prompt Input</strong>
-					<div class="text-xs text-gray-600 mb-3 mt-1">Enter your prompt here.</div>
+					<span class="text-sm font-semibold">Prompt Input</span>
+					<div class="text-xs text-gray-600 mb-2 mt-1">Enter your prompt here.</div>
 					<UTextarea v-model="prompt" :rows="6" placeholder="Write your prompt here" />
 				</div>
 
-				<div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+				<hr class="text-gray-300" />
+
+				<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
 					<!-- Models -->
 					<div>
-						<div class="flex items-center justify-between mb-1">
-							<strong class="text-sm">Task</strong>
+						<div class="flex items-center justify-between">
+							<span class="text-sm font-semibold">Task</span>
 							<span class="text-xs text-gray-500">{{ selectedTask.model }}</span>
 						</div>
+						<div class="text-xs text-gray-600 mt-1 mb-2">Select the task type.</div>
 						<USelectMenu
 							v-model="selectedTask"
 							:items="taskOptions"
@@ -621,12 +677,13 @@ watch(
 					</div>
 					<!-- Temperatures -->
 					<div v-if="selectedTask.task === 'text-generation'">
-						<div class="flex items-center justify-between mb-1">
-							<strong class="text-sm">Temperatures</strong>
+						<div class="flex items-center justify-between">
+							<span class="text-sm font-semibold">Temperatures</span>
 							<span class="text-xs text-gray-500">{{
 								temperatureSelection.map((t) => t.label).join(', ') || 'None'
 							}}</span>
 						</div>
+						<div class="text-xs text-gray-600 mt-1 mb-2">Select the temperature(s) to use.</div>
 						<USelectMenu
 							v-model="temperatureSelection"
 							:items="temperatureOptions"
@@ -637,37 +694,135 @@ watch(
 					<!-- Samples -->
 					<div v-if="selectedTask.task === 'text-generation' && !useStreaming">
 						<div class="flex items-center justify-between mb-1">
-							<strong class="text-sm">Samples</strong>
+							<span class="text-sm font-semibold">Samples</span>
 							<span class="text-sm">{{ samples }}</span>
+						</div>
+						<div class="text-xs text-gray-600 mt-1 mb-2">
+							Select the number of samples to generate.
 						</div>
 						<USlider v-model="samples" :min="1" :max="5" :step="1" />
 					</div>
 					<!-- Max Tokens (text & vision only) -->
 					<div v-if="['text-generation', 'image-vision'].includes(selectedTask.task)">
 						<div class="flex items-center justify-between mb-1">
-							<strong class="text-sm">Max Tokens</strong>
+							<span class="text-sm font-semibold">Max Tokens</span>
 							<span class="text-sm">{{ maxTokens }}</span>
+						</div>
+						<div class="text-xs text-gray-600 mt-1 mb-2">
+							Select the maximum number of tokens to generate.
 						</div>
 						<USlider v-model="maxTokens" :min="32" :max="1024" :step="16" />
 					</div>
 				</div>
 
+				<hr class="text-gray-300" />
+
 				<!-- Task-specific inputs -->
 				<div class="grid gap-4">
-					<!-- Text Generation has no additional media inputs -->
+					<!-- Context & Memory (Text Generation only) -->
+					<div v-if="selectedTask.task === 'text-generation'">
+						<div class="grid gap-6">
+							<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+								<div>
+									<div class="flex items-center justify-between mb-1">
+										<span class="text-sm font-semibold">Use Memory</span>
+									</div>
+									<div class="text-xs text-gray-600 mt-1 mb-2">
+										Persist chat history for this session.
+									</div>
+									<USwitch v-model="useMemory" label="Enable memory" />
+								</div>
+								<div>
+									<div class="flex items-center justify-between mb-1">
+										<span class="text-sm font-semibold">Session ID</span>
+									</div>
+									<div class="text-xs text-gray-600 mt-1 mb-2">
+										Unique identifier for this session.
+									</div>
+									<UInput v-model="sessionId" placeholder="chat" class="w-full" />
+								</div>
+								<div>
+									<div class="flex items-center justify-between mb-1">
+										<span class="text-sm font-semibold">Memory Size</span>
+										<span class="text-sm">{{ memorySize }}</span>
+									</div>
+									<div class="text-xs text-gray-600 mt-1 mb-2">
+										Number of messages to store in memory.
+									</div>
+									<USlider v-model="memorySize" :min="1" :max="200" :step="1" />
+								</div>
+							</div>
+
+							<div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+								<div>
+									<div class="flex items-center justify-between mb-1">
+										<span class="text-sm font-semibold">Context Budget Tokens</span>
+									</div>
+									<div class="text-xs text-gray-600 mt-1 mb-2">
+										Maximum number of tokens to use for context.
+									</div>
+									<UInput
+										v-model.number="contextBudgetTokens"
+										type="number"
+										placeholder="auto"
+										class="w-full"
+									/>
+								</div>
+								<div>
+									<div class="flex items-center justify-between mb-1">
+										<span class="text-sm font-semibold">Overflow Summarization</span>
+									</div>
+									<div class="text-xs text-gray-600 mt-1 mb-2">
+										Summarize overflow context if it exceeds the budget.
+									</div>
+									<USwitch v-model="summarizeOverflow" label="Summarize overflow context" />
+								</div>
+								<div>
+									<div class="flex items-center justify-between mb-1">
+										<span class="text-sm font-semibold">Summary Max Tokens</span>
+										<span class="text-sm">{{ summaryMaxTokens }}</span>
+									</div>
+									<div class="text-xs text-gray-600 mt-1 mb-2">
+										Maximum number of tokens to use for summary.
+									</div>
+									<USlider v-model="summaryMaxTokens" :min="32" :max="400" :step="8" />
+								</div>
+							</div>
+
+							<div>
+								<div class="flex items-center justify-between mb-1">
+									<span class="text-sm font-semibold">Reset Memory</span>
+								</div>
+								<div class="text-xs text-gray-600 mt-1 mb-2">Clear session on next run.</div>
+								<USwitch v-model="resetMemory" label="Enable reset memory" />
+							</div>
+
+							<div class="flex flex-col w-full">
+								<span class="text-sm font-semibold">Context JSON</span>
+								<div class="text-xs text-gray-600 mb-2 mt-1">
+									Optional. Example: { "project": "Acme", "audience": "engineers" }
+								</div>
+								<UTextarea
+									v-model="contextJson"
+									:rows="4"
+									placeholder='{\n  "project": "Acme"\n}'
+								/>
+							</div>
+						</div>
+					</div>
 
 					<div v-if="selectedTask.task === 'image-vision'">
 						<div class="grid gap-6">
 							<div class="flex flex-col w-full">
-								<strong>Image URL</strong>
-								<div class="text-xs text-gray-600 mb-3 mt-1">
+								<span class="text-sm font-semibold">Image URL</span>
+								<div class="text-xs text-gray-600 mb-2 mt-1">
 									Enter the URL of the image to use with the prompt.
 								</div>
 								<UInput v-model="imageUrl" placeholder="https://example.com/image.jpg" />
 							</div>
 							<div class="flex flex-col w-full">
-								<strong>Or Upload Image</strong>
-								<div class="text-xs text-gray-600 mb-3 mt-1">
+								<span class="text-sm font-semibold">Or Upload Image</span>
+								<div class="text-xs text-gray-600 mb-2 mt-1">
 									Upload an image file to use with the prompt.
 								</div>
 								<UInput type="file" accept="image/*" @change="handleChangeImage" />
@@ -678,8 +833,8 @@ watch(
 					<div v-if="selectedTask.task === 'speech-to-text'">
 						<div class="grid gap-3">
 							<div class="flex flex-col w-full">
-								<strong>Upload Audio</strong>
-								<div class="text-xs text-gray-600 mb-3 mt-1">
+								<span class="text-sm font-semibold">Upload Audio</span>
+								<div class="text-xs text-gray-600 mb-2 mt-1">
 									Upload an audio file to use with the prompt.
 								</div>
 								<UInput type="file" accept="audio/*" @change="handleChangeAudio" />
@@ -690,8 +845,8 @@ watch(
 					<div v-if="selectedTask.task === 'text-to-speech'">
 						<div class="grid gap-3">
 							<div class="flex flex-col w-full">
-								<strong>Voice</strong>
-								<div class="text-xs text-gray-600 mb-3 mt-1">
+								<span class="text-sm font-semibold">Voice</span>
+								<div class="text-xs text-gray-600 mb-2 mt-1">
 									Enter the voice to use with the prompt.
 								</div>
 								<UInput v-model="ttsVoice" placeholder="alloy" />
@@ -702,8 +857,8 @@ watch(
 					<div v-if="selectedTask.task === 'image-generation'">
 						<div class="grid gap-3">
 							<div class="flex flex-col w-full">
-								<strong>Size</strong>
-								<div class="text-xs text-gray-600 mb-3 mt-1">Larger sizes may take longer.</div>
+								<span class="text-sm font-semibold">Size</span>
+								<div class="text-xs text-gray-600 mb-2 mt-1">Larger sizes may take longer.</div>
 								<USelectMenu v-model="imageSize" :items="imageSizeOptions" />
 							</div>
 						</div>
