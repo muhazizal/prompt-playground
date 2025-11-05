@@ -15,6 +15,9 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 - Run a local API that captures per-run latency and token usage
 - Use a web UI to compare outputs across temperatures and samples, and save runs to Firestore
 - Explore multimodal capabilities: Image Vision, Image Generation, Speech → Text, and Text → Speech
+- Manage context and session memory with budget-aware trimming and overflow summarization
+- Stream results via SSE for chat and notes summarization, including usage and evaluation events
+- Harden the API with auth, validation, rate limiting, structured logging, and metrics
 
 ## Project Structure
 
@@ -28,7 +31,7 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 - `web/` → Nuxt web app
   - `app/pages/index.vue` → Landing page (overview + links)
   - `app/pages/prompt/index.vue` → Playground UI (Text, Vision, STT, TTS, Image Gen)
-  - `app/pages/notes.vue` → Notes Assistant UI
+  - `app/pages/notes/index.vue` → Notes Assistant UI
   - `app/plugins/firebase.client.ts` → Firebase anonymous auth + Firestore
   - `app/helpers/types.ts` → shared types for results/evaluation
 - `examples/` → Sample scripts for CLI demos
@@ -185,13 +188,14 @@ API Endpoints:
   - `GET /notes/summarize-stream?path=<file>` → SSE events: `start`, `summary`, `result`, `usage`, `evaluation`, `end`, `server_error`
   - `GET /notes/tags` / `POST /notes/tags` → load/save tag candidates
 
-## Prompt Templates & Notes Assistant
+## Learning Track Notes
 
-- See `notes/prompt-templates.md` for:
-  - Few-shot classification (JSON)
-  - Few-shot transformation (style/format)
-  - Structured extraction (schema)
-  - Stepwise reasoning (concise steps)
+- Week 1 (Phase 1): `notes/phase-1-week-1.md` — Prompting fundamentals
+- Week 2 (Phase 1): `notes/phase-1-week-2.md` — Embeddings & Retrieval (RAG basics)
+- Week 3 (Phase 1): `notes/phase-1-week-3.md` — Orchestration & evaluation
+- Week 1 (Phase 2): `notes/phase-2-week-1.md` — API & OpenAI SDK integration, SSE
+- Week 2 (Phase 2): `notes/phase-2-week-2.md` — Auth, validation, rate limiting, observability
+- Week 3 (Phase 2): `notes/phase-2-week-3.md` — Context management & memory, trimming/summarization
 
 ## Notes
 
