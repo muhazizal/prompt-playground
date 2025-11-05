@@ -409,7 +409,7 @@ function copyText(text: string) {
 		</div>
 
 		<UCard>
-			<div class="grid gap-10">
+			<div class="grid gap-6">
 				<div>
 					<!-- Note List -->
 					<div class="flex items-center justify-between">
