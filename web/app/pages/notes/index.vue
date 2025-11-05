@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { Firestore } from 'firebase/firestore'
-import { getDocs, setDoc, doc, collection, serverTimestamp } from 'firebase/firestore'
+import { setDoc, doc, serverTimestamp } from 'firebase/firestore'
 import type { NoteResult } from '@/helpers/types'
 
 const toast = useToast()
@@ -17,12 +18,10 @@ const db = (nuxt as any).$db as Firestore | undefined
 const files = ref<Array<{ name: string }>>([])
 const selected = ref<string[]>([])
 const results = ref<NoteResult[]>([])
-const history = ref<NoteResult[]>([])
 const loadingList = ref(false)
 const processing = ref(false)
 const error = ref<string | null>(null)
 const useStreaming = ref(false)
-const loadingHistory = ref(false)
 
 // Tag configuration
 const tagsConfig = ref<string[]>([])
@@ -52,7 +51,6 @@ function estimateCost(usage: any, model?: string | null) {
 onMounted(async () => {
 	await loadList()
 	await loadTagsConfig()
-	await loadSummaryHistory()
 })
 
 // Load notes list
@@ -169,8 +167,7 @@ async function processSelected() {
 				await saveSummaryRecord(r)
 			}
 
-			// Refresh summary history after saving
-			await loadSummaryHistory()
+			// History fetching moved to dedicated page
 
 			toast.add({
 				title: 'Notes processed',
@@ -303,7 +300,7 @@ async function saveSummaryRecord(r: NoteResult) {
 	try {
 		if (!db) return console.warn('[save] missing db')
 
-		const ref = doc(db, 'summaries', r.file)
+	const ref = doc(db, 'notesSummaries', r.file)
 		const payload = {
 			file: r.file,
 			summary: r.summary,
@@ -327,32 +324,7 @@ async function saveSummaryRecord(r: NoteResult) {
 }
 
 // Load saved summary histories from Firestore
-async function loadSummaryHistory() {
-	loadingHistory.value = true
-	try {
-		if (!db) return console.warn('[history] missing db')
-
-		const querySnapshot = await getDocs(collection(db, 'summaries'))
-		const list: NoteResult[] = querySnapshot.docs.map((doc) => {
-			const data = doc.data() as any
-			const file = typeof data?.file === 'string' && data.file.length > 0 ? data.file : doc.id
-			const summary = typeof data?.summary === 'string' ? data.summary : ''
-			const tags = Array.isArray(data?.tags)
-				? data.tags.filter((t: any) => typeof t === 'string')
-				: []
-			const usage = data?.usage ?? null
-			const evaluation = data?.evaluation ?? null
-			const model = typeof data?.model === 'string' ? data.model : undefined
-			return { file, summary, tags, usage, evaluation, model } as NoteResult
-		})
-
-		history.value = Array.isArray(list) ? list : []
-	} catch (e: any) {
-		console.warn('[history] failed:', e?.message || e)
-	} finally {
-		loadingHistory.value = false
-	}
-}
+// History fetching moved to dedicated page
 
 // Copy text to clipboard
 function copyText(text: string) {
@@ -377,11 +349,16 @@ function copyText(text: string) {
 <template>
 	<UContainer class="py-8">
 		<!-- Header -->
-		<div class="mb-6 space-y-1">
-			<h1 class="text-2xl font-semibold">Notes Assistant</h1>
-			<p class="text-sm text-grey-700">
-				Summarize and tag notes from the repo's <code>notes/</code> folder.
-			</p>
+		<div class="mb-6 flex justify-between items-center">
+			<div>
+				<h1 class="text-2xl font-semibold">Notes Assistant</h1>
+				<p class="text-sm text-grey-700">
+					Summarize and tag notes from the repo's <code>notes/</code> folder.
+				</p>
+			</div>
+			<ULink to="/notes/history">
+				<UButton color="primary" icon="i-heroicons-document-text">Open History</UButton>
+			</ULink>
 		</div>
 
 		<UCard>
@@ -442,7 +419,7 @@ function copyText(text: string) {
 				</div>
 
 				<!-- Action Buttons -->
-				<div class="flex items-center justify-start gap-3">
+				<div class="flex items-center justify-end gap-3">
 					<USwitch
 						v-model="useStreaming"
 						checked-icon="i-heroicons-wifi"
@@ -526,60 +503,5 @@ function copyText(text: string) {
 				</div>
 			</div>
 		</UCard>
-
-		<!-- Summary History -->
-		<div class="mt-6">
-			<div class="flex items-center justify-between mb-1">
-				<strong>Summary History</strong>
-				<UButton
-					size="xs"
-					color="neutral"
-					variant="soft"
-					icon="i-heroicons-arrow-path"
-					:loading="loadingHistory"
-					@click="loadSummaryHistory()"
-					>Reload History</UButton
-				>
-			</div>
-			<div v-if="history.length" class="grid gap-3 mt-2">
-				<UCard v-for="h in history" :key="h.file">
-					<div class="flex items-center justify-between mb-1">
-						<strong>{{ h.file }}</strong>
-						<div class="text-xs text-gray-500">
-							Tokens: Prompt {{ h?.usage?.prompt_tokens ?? 0 }} • Completion
-							{{ h?.usage?.completion_tokens ?? 0 }} • Total
-							{{
-								h?.usage?.total_tokens ??
-								(h?.usage?.prompt_tokens ?? 0) + (h?.usage?.completion_tokens ?? 0)
-							}}
-						</div>
-					</div>
-					<div class="my-1 flex items-center gap-2">
-						<UBadge size="xs" color="neutral" variant="soft"
-							>Model {{ h.model ?? 'gpt-4o-mini' }}</UBadge
-						>
-						<UBadge
-							v-if="estimateCost(h.usage, h.model) !== null"
-							size="xs"
-							color="primary"
-							variant="soft"
-						>
-							Cost est. ${{ estimateCost(h.usage, h.model) }}
-						</UBadge>
-					</div>
-					<div class="text-sm line-clamp-4">{{ h.summary }}</div>
-					<div class="mt-2 flex flex-wrap gap-2">
-						<UBadge v-for="t in h.tags" :key="t" color="primary" variant="soft">{{ t }}</UBadge>
-					</div>
-					<div v-if="h.evaluation" class="mt-2 text-xs text-gray-700">
-						Coverage {{ (h.evaluation.coverage * 100).toFixed(0) }}% • Concision
-						{{ (h.evaluation.concision * 100).toFixed(0) }}% • Formatting
-						{{ ((h.evaluation.formatting ?? 0) * 100).toFixed(0) }}% • Factuality
-						{{ ((h.evaluation.factuality ?? 0) * 100).toFixed(0) }}%
-					</div>
-				</UCard>
-			</div>
-			<div v-else class="text-xs text-gray-500">No history available.</div>
-		</div>
 	</UContainer>
 </template>

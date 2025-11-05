@@ -7,19 +7,38 @@ const route = useRoute()
 const items = computed<NavigationMenuItem[]>(() => [
 	{
 		label: 'Prompt Playground',
-		to: '/',
-		active: route.path === '/',
+		to: '/prompt',
+		active: route.path.includes('/prompt'),
 	},
 	{
 		label: 'Notes Assistant',
 		to: '/notes',
-		active: route.path === '/notes',
+		active: route.path.includes('/notes'),
 	},
 ])
 </script>
 
 <template>
-	<header class="w-full py-4 border-b border-b-gray-200">
-		<UNavigationMenu :items="items" class="w-full justify-center" />
-	</header>
+	<UHeader>
+		<template #title> AI Lab </template>
+
+		<UNavigationMenu :items="items" />
+
+		<template #right>
+			<UTooltip text="Open on GitHub" :kbds="['meta', 'G']">
+				<UButton
+					color="neutral"
+					variant="ghost"
+					to="https://github.com/nuxt/ui"
+					target="_blank"
+					icon="i-simple-icons-github"
+					aria-label="GitHub"
+				/>
+			</UTooltip>
+		</template>
+
+		<template #body>
+			<UNavigationMenu :items="items" orientation="vertical" class="-mx-2.5" />
+		</template>
+	</UHeader>
 </template>

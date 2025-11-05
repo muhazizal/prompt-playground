@@ -1,0 +1,151 @@
+<script setup lang="ts">
+import type { BreadcrumbItem } from '@nuxt/ui'
+import type {
+	HistoryEntry,
+	VisionHistory,
+	TranscriptionHistory,
+	TTSHistory,
+	ImageGenHistory,
+} from '@/helpers/types'
+import type { QueryDocumentSnapshot, Timestamp } from 'firebase/firestore'
+
+import AppBreadcrumb from '~/components/history/AppBreadcrumb.vue'
+import PaginatedList from '~/components/history/PaginatedList.vue'
+import PromptRunCard from '~/components/history/PromptRunCard.vue'
+import SimpleHistoryCard from '~/components/history/SimpleHistoryCard.vue'
+
+// Breadcrumb
+const breadcrumb: BreadcrumbItem[] = [{ label: 'Prompt Playground', to: '/prompt' }, { label: 'History' }]
+
+// Tabs (per-type only)
+const tab = ref<'text' | 'vision' | 'stt' | 'tts' | 'image'>('text')
+const tabs = [
+	{ label: 'Text Generation', value: 'text' },
+	{ label: 'Image Generation', value: 'image' },
+	{ label: 'Image Vision', value: 'vision' },
+	{ label: 'Speech → Text', value: 'stt' },
+	{ label: 'Text → Speech', value: 'tts' },
+]
+
+// Mappers
+function mapPlayground(doc: QueryDocumentSnapshot<HistoryEntry>): HistoryEntry {
+  const data = doc.data() as any
+  const createdAt = data?.createdAt as Timestamp | undefined
+  const at = createdAt?.toDate?.() ? createdAt.toDate().getTime() : data?.at ?? Date.now()
+  return { id: doc.id, ...data, at } as HistoryEntry
+}
+
+function mapVision(doc: QueryDocumentSnapshot<VisionHistory>): VisionHistory {
+  const data = doc.data() as any
+  return { id: doc.id, ...data } as VisionHistory
+}
+function mapTranscription(doc: QueryDocumentSnapshot<TranscriptionHistory>): TranscriptionHistory {
+  const data = doc.data() as any
+  return { id: doc.id, ...data } as TranscriptionHistory
+}
+function mapTTS(doc: QueryDocumentSnapshot<TTSHistory>): TTSHistory {
+  const data = doc.data() as any
+  return { id: doc.id, ...data } as TTSHistory
+}
+function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHistory {
+  const data = doc.data() as any
+  return { id: doc.id, ...data } as ImageGenHistory
+}
+</script>
+
+<template>
+	<UContainer class="py-8 space-y-6">
+		<AppBreadcrumb :items="breadcrumb" />
+
+		<div>
+			<UTabs v-model="tab" :items="tabs" />
+		</div>
+
+		<div v-if="tab === 'text'">
+            <PaginatedList
+                collection="promptTextHistory"
+                order-field="createdAt"
+                :page-size="10"
+                :map-doc="mapPlayground"
+                title="Text Generation History"
+            >
+				<template #item="{ item }">
+					<PromptRunCard :entry="(item as HistoryEntry)" />
+				</template>
+			</PaginatedList>
+		</div>
+		<div v-if="tab === 'vision'">
+			<PaginatedList
+				collection="visionHistory"
+				order-field="createdAt"
+				:page-size="10"
+				:map-doc="mapVision"
+				title="Image Vision History"
+			>
+				<template #item="{ item }">
+					<SimpleHistoryCard
+						:title="item.prompt ? 'Prompt' : 'Vision Result'"
+						:meta="`Model: ${item.model}`"
+						:subtitle="new Date(item.at).toLocaleString()"
+						:image-src="item.imageUrl"
+						:body="item.text"
+					/>
+				</template>
+			</PaginatedList>
+		</div>
+		<div v-if="tab === 'stt'">
+			<PaginatedList
+				collection="transcriptionHistory"
+				order-field="createdAt"
+				:page-size="10"
+				:map-doc="mapTranscription"
+				title="Speech → Text History"
+			>
+				<template #item="{ item }">
+					<SimpleHistoryCard
+						title="Transcription"
+						:meta="`Model: ${item.model}`"
+						:subtitle="new Date(item.at).toLocaleString()"
+						:body="item.text"
+					/>
+				</template>
+			</PaginatedList>
+		</div>
+		<div v-if="tab === 'tts'">
+			<PaginatedList
+				collection="ttsHistory"
+				order-field="createdAt"
+				:page-size="10"
+				:map-doc="mapTTS"
+				title="Text → Speech History"
+			>
+				<template #item="{ item }">
+					<SimpleHistoryCard
+						:title="`Voice: ${item.voice || 'default'}`"
+						:meta="`Model: ${item.model}`"
+						:subtitle="new Date(item.at).toLocaleString()"
+						:body="item.text"
+					/>
+				</template>
+			</PaginatedList>
+		</div>
+		<div v-if="tab === 'image'">
+			<PaginatedList
+				collection="imageGenHistory"
+				order-field="createdAt"
+				:page-size="10"
+				:map-doc="mapImageGen"
+				title="Image Generation History"
+			>
+				<template #item="{ item }">
+					<SimpleHistoryCard
+						:title="`Size: ${item.size || 'auto'}`"
+						:meta="`Model: ${item.model}`"
+						:subtitle="new Date(item.at).toLocaleString()"
+						:body="item.prompt"
+					/>
+				</template>
+			</PaginatedList>
+		</div>
+	</UContainer>
+</template>

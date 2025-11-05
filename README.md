@@ -1,6 +1,6 @@
 # prompt-playground
 
-An end-to-end playground for LLM prompting, multimodal experiments (vision, speech, image gen), and notes summarization.
+An end-to-end playground for LLM prompting, multimodal experiments (vision, speech, image gen), and notes summarization. Build with Nuxt 4, Vue 3, Node.js, Express and OpenAI API.
 
 - CLI demos for tokens, embeddings, and chat prompting
 - Modular API server (prompt and notes) that proxies to OpenAI with metrics
@@ -26,7 +26,8 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
   - `notes-core.mjs` → summarization, embeddings, evaluation, caching utilities
   - `notes.mjs` → registers notes endpoints (list/process/summarize/stream, tags)
 - `web/` → Nuxt web app
-  - `app/pages/index.vue` → Playground UI (Text, Vision, STT, TTS, Image Gen)
+  - `app/pages/index.vue` → Landing page (overview + links)
+  - `app/pages/prompt/index.vue` → Playground UI (Text, Vision, STT, TTS, Image Gen)
   - `app/pages/notes.vue` → Notes Assistant UI
   - `app/plugins/firebase.client.ts` → Firebase anonymous auth + Firestore
   - `app/helpers/types.ts` → shared types for results/evaluation
@@ -52,6 +53,15 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 
 - Web UI → API requests → OpenAI API
 - API → Firestore (optional) for run history storage
+
+### Firestore Collections (Standardized)
+
+- `promptTextHistory` → Text generation runs (`HistoryEntry`)
+- `visionHistory` → Image vision results (`VisionHistory`)
+- `transcriptionHistory` → Speech → Text results (`TranscriptionHistory`)
+- `ttsHistory` → Text → Speech requests (`TTSHistory`)
+- `imageGenHistory` → Image generation requests (`ImageGenHistory`)
+- `notesSummaries` → Notes summaries (`NoteResult`)
 
 ## Setup
 
@@ -114,6 +124,14 @@ Environment:
   - `NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...`
   - `NUXT_PUBLIC_FIREBASE_APP_ID=...`
 
+### Pages
+
+- Landing: `http://localhost:3002/`
+- Prompt Playground: `http://localhost:3002/prompt`
+- Prompt History: `http://localhost:3002/prompt/history`
+- Notes Assistant: `http://localhost:3002/notes`
+- Notes History: `http://localhost:3002/notes/history`
+
 Features:
 
 - Playground UI with isolated tasks:
@@ -127,6 +145,7 @@ Features:
 - Per-run latency and token usage (prompt/completion/total)
 - Dynamic `/prompt/models` list (fallback on missing API key)
 - Save history to Firestore for: Text Gen, Vision, STT, TTS, and Image Gen (metadata only)
+  - Collections: `promptTextHistory`, `visionHistory`, `transcriptionHistory`, `ttsHistory`, `imageGenHistory`, `notesSummaries`
 - Notes Assistant:
   - Loads notes from `notes/`
   - Batch process (`POST /notes/process`) with usage and evaluation
@@ -177,6 +196,33 @@ API Endpoints:
 - Embeddings caching lives in `cache/embeddings.json` and warms in-memory caches.
 - SSE streaming emits usage and evaluation after the result for better UX.
 - Large image/audio payloads are supported by increasing JSON limits (`JSON_LIMIT`, default around `5mb`). Prefer URLs for images and compressed audio to keep requests small.
+
+## Cost Estimation
+
+LLM call estimate per run:
+
+```
+Cost ≈ (prompt_tokens / 1,000,000) * INPUT_PRICE + (completion_tokens / 1,000,000) * OUTPUT_PRICE
+```
+
+- Example (gpt-4o-mini): INPUT ≈ $0.15 / 1M tokens; OUTPUT ≈ $0.60 / 1M.
+- Example (gpt-4o): INPUT ≈ $5.00 / 1M; OUTPUT ≈ $15.00 / 1M.
+
+Firestore guidance:
+- Store metadata only; avoid large binaries.
+- Paginate reads (page size ~10); monitor daily quotas.
+- Apply least-privilege rules; segregate user data.
+
+## Screenshots / Demo
+
+- Add screenshots/GIFs under `docs/` and link here (Landing, Playground, Histories, Notes).
+
+## Documentation & Links
+
+- Nuxt: https://nuxt.com/
+- Nuxt UI: https://ui.nuxt.com/
+- OpenAI SDK: https://github.com/openai/openai-node
+- Firebase Firestore: https://firebase.google.com/docs/firestore
 
 ## Quick Tests
 
