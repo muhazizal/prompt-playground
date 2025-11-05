@@ -133,8 +133,8 @@ async function runPrompt() {
 				responseText.value = data?.text || ''
 				// Save history (avoid large binaries; only store imageUrl if present)
 				await saveVisionRecord({
-					prompt: prompt.value || undefined,
-					imageUrl: imageUrl.value || undefined,
+					...(prompt.value ? { prompt: prompt.value } : {}),
+					...(imageUrl.value ? { imageUrl: imageUrl.value } : {}),
 					text: data?.text || '',
 					model: model.value.value,
 					usage: data?.usage,
@@ -416,6 +416,14 @@ const handleChangeAudio = async (e: Event) => {
 	audioBase64.value = await handleFileReader(e)
 }
 
+function cleanFirestoreEntry(entry: any) {
+	const cleaned: any = {}
+	for (const [k, v] of Object.entries(entry)) {
+		if (v !== undefined && v !== null) cleaned[k] = v
+	}
+	return cleaned
+}
+
 // Save a record to Firestore
 async function saveRecord(entry: {
 	prompt: string
@@ -428,20 +436,16 @@ async function saveRecord(entry: {
 	try {
 		if (!db) return console.warn('[save] missing db')
 
-		// Add document to Firestore collection 'playground'
-	await addDoc(collection(db, 'promptTextHistory'), {
-		...entry,
-		type: 'text',
-		at: Date.now(),
-		createdAt: serverTimestamp(),
-	})
+		const cleaned: any = cleanFirestoreEntry(entry)
+
+		await addDoc(collection(db, 'promptTextHistory'), {
+			...cleaned,
+			type: 'text',
+			at: Date.now(),
+			createdAt: serverTimestamp(),
+		})
 	} catch (e: any) {
 		console.warn('[save] failed:', e?.message || e)
-		toast.add({
-			title: 'Failed to save record',
-			description: e?.data?.error || e?.message || 'Unknown error',
-			color: 'error',
-		})
 		return
 	}
 }
@@ -457,8 +461,11 @@ async function saveVisionRecord(entry: {
 }) {
 	try {
 		if (!db) return console.warn('[save vision] missing db')
+
+		const cleaned: any = cleanFirestoreEntry(entry)
+
 		await addDoc(collection(db, 'visionHistory'), {
-			...entry,
+			...cleaned,
 			type: 'vision',
 			at: Date.now(),
 			createdAt: serverTimestamp(),
@@ -476,8 +483,11 @@ async function saveTranscriptionRecord(entry: {
 }) {
 	try {
 		if (!db) return console.warn('[save transcription] missing db')
+
+		const cleaned: any = cleanFirestoreEntry(entry)
+
 		await addDoc(collection(db, 'transcriptionHistory'), {
-			...entry,
+			...cleaned,
 			type: 'stt',
 			at: Date.now(),
 			createdAt: serverTimestamp(),
@@ -496,8 +506,11 @@ async function saveTTSRecord(entry: {
 }) {
 	try {
 		if (!db) return console.warn('[save tts] missing db')
+
+		const cleaned: any = cleanFirestoreEntry(entry)
+
 		await addDoc(collection(db, 'ttsHistory'), {
-			...entry,
+			...cleaned,
 			type: 'tts',
 			at: Date.now(),
 			createdAt: serverTimestamp(),
@@ -511,8 +524,11 @@ async function saveTTSRecord(entry: {
 async function saveImageGenRecord(entry: { prompt: string; model: string; size?: string }) {
 	try {
 		if (!db) return console.warn('[save image gen] missing db')
+
+		const cleaned: any = cleanFirestoreEntry(entry)
+
 		await addDoc(collection(db, 'imageGenHistory'), {
-			...entry,
+			...cleaned,
 			type: 'image',
 			at: Date.now(),
 			createdAt: serverTimestamp(),
@@ -522,8 +538,6 @@ async function saveImageGenRecord(entry: { prompt: string; model: string; size?:
 	}
 }
 
-// Load: Vision
-// Load models on mount (history moved to dedicated pages)
 onMounted(async () => {
 	await handleLoadModel()
 })
