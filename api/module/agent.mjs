@@ -1,0 +1,49 @@
+import { runAgent } from '../core/agent.mjs'
+import { getClient } from '../core/prompt-core.mjs'
+import { requireApiKey } from '../middleware/auth.mjs'
+import { validateBody } from '../middleware/validate.mjs'
+import { sendError } from '../utils/http.mjs'
+
+export function registerAgentRoutes(app) {
+  app.post(
+    '/agent/run',
+    requireApiKey(),
+    ...validateBody({
+      prompt: { in: ['body'], optional: false, isString: true },
+      sessionId: { in: ['body'], optional: true, isString: true },
+      useMemory: { in: ['body'], optional: true, isBoolean: true },
+      model: { in: ['body'], optional: true, isString: true },
+      temperature: { in: ['body'], optional: true, isFloat: { options: { min: 0, max: 2 } } },
+      maxTokens: { in: ['body'], optional: true, isInt: { options: { min: 1, max: 4000 } } },
+      weatherQuery: { in: ['body'], optional: true, isString: true },
+      docsQuery: { in: ['body'], optional: true, isString: true },
+      chain: { in: ['body'], optional: true, isString: true },
+    }),
+    async (req, res) => {
+      try {
+        const client = getClient(req.aiApiKey)
+        const {
+          prompt,
+          sessionId = 'default',
+          useMemory = true,
+          model = 'gpt-4o-mini',
+          temperature = 0.2,
+          maxTokens = 400,
+          weatherQuery,
+          docsQuery,
+          chain,
+        } = req.body || {}
+
+        const debug = String(chain || '').toLowerCase() === 'debug'
+        const result = await runAgent(
+          { prompt, sessionId, useMemory, model, temperature, maxTokens, weatherQuery, docsQuery },
+          { client, debug }
+        )
+        res.json(result)
+      } catch (err) {
+        sendError(res, 500, 'SERVER_ERROR', err?.message || String(err))
+      }
+    }
+  )
+}
+

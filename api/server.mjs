@@ -6,6 +6,7 @@ import { registerMetricsRoute, createRequestCounterMiddleware } from './metrics.
 
 import { registerNotesRoutes } from './module/notes.mjs'
 import { registerPromptRoutes } from './module/prompt.mjs'
+import { registerAgentRoutes } from './module/agent.mjs'
 
 import { createLoggingMiddleware } from './middleware/logging.mjs'
 import { createRateLimitMiddleware } from './middleware/rateLimit.mjs'
@@ -36,6 +37,7 @@ app.use(createRateLimitMiddleware({ windowMs: 60_000, max: 120 }))
 
 registerNotesRoutes(app)
 registerPromptRoutes(app)
+registerAgentRoutes(app)
 registerMetricsRoute(app)
 
 // Chat and models routes are now registered via prompt.mjs

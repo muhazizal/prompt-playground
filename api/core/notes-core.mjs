@@ -186,7 +186,7 @@ export function setCachedSummary(text, model, summary, tags, usage) {
 }
 
 // Get text embedding with cache
-async function getTextEmbedding(client, text) {
+export async function getTextEmbedding(client, text) {
 	loadEmbeddingsCacheFromDisk()
 	const key = sha1(text)
 
@@ -460,4 +460,25 @@ export async function processWithConcurrency(items, limit, handler) {
 	await Promise.all(workers)
 
 	return results
+}
+
+/**
+ * Semantic search across local notes using embeddings.
+ * Returns topK results: { file, score, snippet }
+ */
+export async function semanticSearchNotes(client, query, { topK = 3 } = {}) {
+	if (!query || typeof query !== 'string') return []
+	const qVec = await getTextEmbedding(client, query)
+	const files = listNoteFiles()
+	const ranked = []
+	for (const f of files) {
+		const text = readNote(f.path)
+		if (!text) continue
+		const vec = await getTextEmbedding(client, text)
+		const score = cosineSimilarity(qVec, vec) // use the single helper
+		const snippet = text.slice(0, 300).replace(/\n/g, ' ').trim()
+		ranked.push({ file: f.name, score, snippet })
+	}
+	ranked.sort((a, b) => b.score - a.score)
+	return ranked.slice(0, Math.max(1, Number(topK) || 3))
 }

@@ -9,7 +9,8 @@
 		"demo:embeddings": "node examples/embeddings.mjs",
 		"demo:tokens": "node examples/tokenization.mjs",
 		"demo:prompt": "node examples/prompt_engineering.mjs",
-		"demo:notes": "node examples/notes_assistant.mjs"
+		"demo:notes": "node examples/notes_assistant.mjs",
+		"demo:mini-agent": "node examples/mini_agent.mjs"
 	},
 	"dependencies": {
 		"@dqbd/tiktoken": "^1.0.22",

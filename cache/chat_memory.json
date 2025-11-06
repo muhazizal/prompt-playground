@@ -28,5 +28,15 @@
       "role": "assistant",
       "content": "Summary: ```json\n{\n  \"summary\": \"In Week 2 of Phase 1, the focus is on embedding text for semantic search and building a vector index for retrieval-augmented generation (RAG). Key objectives include understanding text embeddings, creating a vector store with metadata, and evaluating retrieval quality. The process involves chunking documents, caching vectors, and implementing cosine similarity for ranking. The note also emphasizes the importance of balancing chunk size, overlap, and retrieval costs while providing implementation steps and testing guidelines.\",\n  \"tags\": [\n    \"Embeddings\",\n    \"Semantic Search\",\n    \"Vector Index\",\n    \"Retrieval-Augmented Generation\",\n    \"Cosine Similarity\"\n  ]\n}\n```. Tags: Embeddings, OpenAI SDK, Tokenization, Prompt Design, Firebase"
     }
+  ],
+  "mini-agent-demo": [
+    {
+      "role": "user",
+      "content": "What is the weather and what did we learn last week?"
+    },
+    {
+      "role": "assistant",
+      "content": "I couldn't retrieve the weather information. However, regarding what we learned last week, please refer to the notes from phase-2-week-4.\n\nHere’s a structured JSON response:\n\n```json\n{\n  \"intent\": \"docs\",\n  \"answer\": \"Refer to the notes from phase-2-week-4 for the learnings.\",\n  \"sources\": \"phase-2-week-4.md\",\n  \"usage\": \"N/A\",\n  \"costUsd\": \"N/A\",\n  \"steps\": \"N/A\"\n}\n```"
+    }
   ]
 }
