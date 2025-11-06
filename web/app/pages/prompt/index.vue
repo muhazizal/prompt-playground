@@ -506,7 +506,12 @@ watch(
 						label="Stream Prompt"
 						description="Real-time result"
 					/>
-					<PromptActions :loading="loading" @run="runPrompt" @clear="handleClearOutput" />
+					<PromptActions
+						:loading="loading"
+						:disabledRun="!prompt.trim()"
+						@run="runPrompt"
+						@clear="handleClearOutput"
+					/>
 				</div>
 
 				<PromptResultPanel

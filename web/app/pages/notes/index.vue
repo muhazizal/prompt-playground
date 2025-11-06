@@ -8,6 +8,8 @@ import NotesTagsForm from '~/components/notes/NotesTagsForm.vue'
 import { useNotesApi } from '@/composables/useNotesApi'
 import { useNotesStream } from '@/composables/useNotesStream'
 import { useNotesSave } from '@/composables/useNotesSave'
+import TextContextPanel from '@/components/prompt/TextContextPanel.vue'
+import PromptActions from '@/components/prompt/PromptActions.vue'
 
 const toast = useToast()
 
@@ -273,12 +275,7 @@ function copyText(text: string) {
 							</UButton>
 						</div>
 					</div>
-					<NoteList
-						:files="files"
-						:selected="selected"
-						:loading="loadingList"
-						@toggle="handleChangeFiles"
-					/>
+					<NoteList :files="files" :loading="loadingList" @toggle="handleChangeFiles" />
 				</div>
 
 				<hr class="text-gray-300" />
@@ -298,88 +295,16 @@ function copyText(text: string) {
 
 				<!-- Context & Memory -->
 				<div>
-					<div class="grid gap-4">
-						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-							<div>
-								<div class="flex items-center justify-between">
-									<span class="text-sm font-semibold">Use Memory</span>
-								</div>
-								<div class="text-xs text-gray-600 mb-2 mt-1">Persist summaries per session.</div>
-								<USwitch v-model="useMemory" label="Enable Memory" />
-							</div>
-							<div>
-								<div class="flex items-center justify-between">
-									<span class="text-sm font-semibold">Session ID</span>
-								</div>
-								<div class="text-xs text-gray-600 mb-2 mt-1">
-									Unique identifier for this session.
-								</div>
-								<UInput v-model="sessionId" placeholder="notes" class="w-full" />
-							</div>
-							<div>
-								<div class="flex items-center justify-between">
-									<span class="text-sm font-semibold">Memory Size</span>
-									<span class="text-sm">{{ memorySize }}</span>
-								</div>
-								<div class="text-xs text-gray-600 mb-2 mt-1">
-									Number of notes to store in memory.
-								</div>
-								<USlider v-model="memorySize" :min="1" :max="200" :step="1" />
-							</div>
-						</div>
-
-						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-							<div>
-								<div class="flex items-center justify-between">
-									<span class="text-sm font-semibold">Context Budget Tokens</span>
-								</div>
-								<div class="text-xs text-gray-600 mb-2 mt-1">
-									Maximum number of tokens to use for context.
-								</div>
-								<UInput
-									v-model.number="contextBudgetTokens"
-									type="number"
-									placeholder="auto"
-									class="w-full"
-								/>
-							</div>
-							<div>
-								<div class="flex items-center justify-between">
-									<span class="text-sm font-semibold">Overflow Summarization</span>
-								</div>
-								<div class="text-xs text-gray-600 mb-2 mt-1">
-									Summarize overflow context if it exceeds the budget.
-								</div>
-								<USwitch v-model="summarizeOverflow" label="Summarize overflow context" />
-							</div>
-							<div>
-								<div class="flex items-center justify-between">
-									<span class="text-sm font-semibold">Summary Max Tokens</span>
-									<span class="text-sm">{{ summaryMaxTokens }}</span>
-								</div>
-								<div class="text-xs text-gray-600 mb-2 mt-1">
-									Maximum number of tokens to use for summary.
-								</div>
-								<USlider v-model="summaryMaxTokens" :min="32" :max="400" :step="8" />
-							</div>
-						</div>
-
-						<div>
-							<div class="flex items-center justify-between">
-								<span class="text-sm font-semibold">Reset Memory</span>
-							</div>
-							<div class="text-xs text-gray-600 mb-2 mt-1">Clear session on next run.</div>
-							<USwitch v-model="resetMemory" label="Enable Reset Memory" />
-						</div>
-
-						<div class="flex flex-col w-full">
-							<span class="text-sm font-semibold">Context JSON</span>
-							<div class="text-xs text-gray-600 mb-2 mt-1">
-								Optional. Example: { "project": "Acme", "noteType": "meeting" }
-							</div>
-							<UTextarea v-model="contextJson" :rows="4" placeholder='{\n  "project": "Acme"\n}' />
-						</div>
-					</div>
+					<TextContextPanel
+						v-model:useMemory="useMemory"
+						v-model:sessionId="sessionId"
+						v-model:memorySize="memorySize"
+						v-model:contextBudgetTokens="contextBudgetTokens"
+						v-model:summarizeOverflow="summarizeOverflow"
+						v-model:summaryMaxTokens="summaryMaxTokens"
+						v-model:resetMemory="resetMemory"
+						v-model:contextJson="contextJson"
+					/>
 				</div>
 
 				<!-- Action Buttons -->
@@ -391,23 +316,12 @@ function copyText(text: string) {
 						label="Stream Note"
 						description="Real-time result"
 					/>
-					<UButton
-						class="h-full"
-						icon="i-heroicons-play"
+					<PromptActions
 						:loading="processing"
-						:disabled="selected.length === 0"
-						@click="processSelected"
-						>Run Assistant</UButton
-					>
-					<UButton
-						class="h-full"
-						variant="soft"
-						color="neutral"
-						:disabled="processing"
-						icon="i-heroicons-x-mark"
-						@click="results = []"
-						>Clear Output</UButton
-					>
+						:disabledRun="selected.length === 0"
+						@run="processSelected"
+						@clear="results = []"
+					/>
 				</div>
 
 				<!-- Error Alert -->

@@ -3,7 +3,7 @@
  * PromptActions
  * Action buttons to run and clear output.
  */
-const props = defineProps<{ loading?: boolean }>()
+const props = defineProps<{ loading?: boolean; disabledRun?: boolean }>()
 const emit = defineEmits<{ (e: 'run'): void; (e: 'clear'): void }>()
 </script>
 
@@ -12,6 +12,7 @@ const emit = defineEmits<{ (e: 'run'): void; (e: 'clear'): void }>()
 		<UButton
 			class="h-full"
 			:loading="props.loading"
+			:disabled="props.disabledRun || props.loading"
 			color="primary"
 			icon="i-heroicons-play"
 			@click="emit('run')"
