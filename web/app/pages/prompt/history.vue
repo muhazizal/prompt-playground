@@ -9,10 +9,10 @@ import type {
 } from '@/helpers/types'
 import type { QueryDocumentSnapshot, Timestamp } from 'firebase/firestore'
 
-import AppBreadcrumb from '~/components/app/AppBreadcrumb.vue'
-import HistoryList from '~/components/history/HistoryList.vue'
-import HistoryPromptCard from '~/components/history/HistoryPromptCard.vue'
-import HistorySimpleCard from '~/components/history/HistorySimpleCard.vue'
+import AppBreadcrumb from '@/components/app/AppBreadcrumb.vue'
+import HistoryList from '@/components/history/HistoryList.vue'
+import HistoryPromptCard from '@/components/history/HistoryPromptCard.vue'
+import HistorySimpleCard from '@/components/history/HistorySimpleCard.vue'
 
 // Breadcrumb
 const breadcrumb: BreadcrumbItem[] = [
