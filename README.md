@@ -51,6 +51,7 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 - Tooling
   - NPM scripts for CLI, examples, API, and web dev
   - Dotenv for local configuration
+  - Shared HTTP utilities for input normalization in `api/utils/http.mjs` (`toBool`, `toNum`, `safeParseJson`)
 
 ## Data Flow
 
@@ -108,7 +109,7 @@ Options:
 
 ## Web App (Nuxt + Express)
 
-- Start frontend: `npm run web:dev` (Nuxt dev on `http://localhost:3002/`)
+- Start frontend: `npm run web:dev` (Nuxt dev on `http://localhost:3000/`)
 - Start API: `npm run api:dev` (Express on `http://localhost:4000/`)
 - Combined dev: `npm run dev` (runs both; ports may vary)
 
@@ -116,6 +117,7 @@ Environment:
 
 - Backend: `.env` at repo root
   - `OPENAI_API_KEY=your_key_here`
+  - `PORT=4000` (optional; override API port)
   - `JSON_LIMIT=5mb` (optional; increase if sending large base64 image/audio)
   - Optional: `WEB_ORIGIN=http://localhost:3000,http://localhost:3002`
   - Chat memory (optional; Redis-backed)
@@ -134,11 +136,12 @@ Environment:
 
 ### Pages
 
-- Landing: `http://localhost:3002/`
-- Prompt Playground: `http://localhost:3002/prompt`
-- Prompt History: `http://localhost:3002/prompt/history`
-- Notes Assistant: `http://localhost:3002/notes`
-- Notes History: `http://localhost:3002/notes/history`
+- Landing: `http://localhost:3000/`
+- Prompt Playground: `http://localhost:3000/prompt`
+- Prompt History: `http://localhost:3000/prompt/history`
+- Notes Assistant: `http://localhost:3000/notes`
+- Notes History: `http://localhost:3000/notes/history`
+- Agent: `http://localhost:3000/agent`
 
 Features:
 
@@ -183,10 +186,21 @@ API Endpoints:
 - `GET /prompt/models`
   - Returns `{ models: Array<{ label, value }> }` from backend or fallback list
 - Notes
+
   - `GET /notes/list` → `{ files: Array<{ name }> }`
   - `POST /notes/process` → `{ results: Array<{ file, summary, model, tags, usage, evaluation }> }`
   - `GET /notes/summarize-stream?path=<file>` → SSE events: `start`, `summary`, `result`, `usage`, `evaluation`, `end`, `server_error`
   - `GET /notes/tags` / `POST /notes/tags` → load/save tag candidates
+
+- Agent
+
+  - `POST /agent/run`
+    - Body: `{ prompt, model?, temperature?, maxTokens?, useMemory?, sessionId?, chain? }`
+    - Returns: `{ result: {...}, usage?, durationMs? }`
+
+- System
+  - `GET /metrics` → `{ counters: { requests_total, sse_starts_total, openai_calls_total, cache_hits_total } }`
+  - `GET /health` → `{ ok: true }`
 
 ## Learning Track Notes
 
@@ -359,4 +373,13 @@ curl -s -X POST http://localhost:4000/prompt/text-to-speech \
 # Notes: list and process
 curl -s http://localhost:4000/notes/list | jq
 curl -s -X POST http://localhost:4000/notes/process -H 'Content-Type: application/json' -d '{}' | jq
+
+# Agent: minimal run
+curl -s -X POST http://localhost:4000/agent/run \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Plan a todo list","useMemory":true,"sessionId":"agent-demo"}' | jq
+
+# Metrics & Health
+curl -s http://localhost:4000/metrics | jq
+curl -s http://localhost:4000/health | jq
 ```

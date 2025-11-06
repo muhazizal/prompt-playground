@@ -24,13 +24,12 @@ const items = computed<NavigationMenuItem[]>(() => [
 </script>
 
 <template>
-	<UHeader>
+	<UHeader :toggle="false">
 		<template #title> AI Lab </template>
 
-		<UNavigationMenu :items="items" />
-
 		<template #right>
-			<UTooltip text="Open on GitHub" :kbds="['meta', 'G']">
+			<UNavigationMenu :items="items" class="-mx-2.5" />
+			<UTooltip text="Open on GitHub" :kbds="['meta', 'G']" class="ml-10">
 				<UButton
 					color="neutral"
 					variant="ghost"
@@ -40,10 +39,6 @@ const items = computed<NavigationMenuItem[]>(() => [
 					aria-label="GitHub"
 				/>
 			</UTooltip>
-		</template>
-
-		<template #body>
-			<UNavigationMenu :items="items" orientation="vertical" class="-mx-2.5" />
 		</template>
 	</UHeader>
 </template>

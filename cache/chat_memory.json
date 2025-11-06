@@ -23,6 +23,14 @@
     {
       "role": "assistant",
       "content": "I'm unable to provide real-time information, including current weather updates, as my knowledge only extends up to October 2023 and I don't have access to the internet for live data. To get the most accurate and up-to-date weather information, I recommend checking a reliable weather website or using a weather app on your device."
+    },
+    {
+      "role": "user",
+      "content": "what do you remember about our conversation?"
+    },
+    {
+      "role": "assistant",
+      "content": "In our conversation, you asked me to explain concepts related to User Stories, Expected Results, Story Points, and SP Steps, particularly in the context of a technical test for a QA Engineer position. I provided detailed definitions, examples, and a mind mapping structure for these concepts. If there's anything specific you would like to revisit or expand upon, please let me know!"
     }
   ],
   "H7sniPhIgmRiIydSkZjAV2QQplB2:notes": [
@@ -85,6 +93,10 @@
     {
       "role": "assistant",
       "content": "Summary: ```json\n{\n  \"summary\": \"In Week 4 of Phase 2, the focus is on AI product thinking, emphasizing design patterns, cost optimization, and a structured debugging workflow. Key concepts include using tools, actions, and chains to create reliable AI endpoints while monitoring costs through token budgeting and usage tracking. The debugging process highlights the importance of reproducibility, prompt hygiene, and iteration for refining prompts and outputs. The final challenge involves building a 'Mini AI Agent' that integrates memory, external APIs, and structured JSON responses, ensuring reliability and cost-effectiveness.\",\n  \"tags\": [\n    \"AI Product Design\",\n    \"Cost Optimization\",\n    \"Debugging Workflow\",\n    \"Token Budgeting\",\n    \"Mini AI Agent\"\n  ]\n}\n```. Tags: OpenAI SDK, Prompt Design, CLI, Tokenization, Reasoning"
+    },
+    {
+      "role": "assistant",
+      "content": "Summary: ```json\n{\n  \"summary\": \"In Week 1 of Phase 1, the focus is on the fundamentals of effective prompting for language models, covering prompt structure, key parameters, tokenization, and reusable templates. Key concepts include the anatomy of prompts, controlling output variability with parameters like temperature and max tokens, and the importance of budgeting to avoid truncation and costs. Practical examples and templates for common tasks are provided, emphasizing the need for clear instructions and constraints to enhance output quality. The week concludes with reflections on balancing determinism and creativity in outputs and the importance of managing token budgets.\",\n  \"tags\": [\n    \"prompting\",\n    \"LLM\",\n    \"tokenization\",\n    \"output quality\",\n    \"budgeting\"\n  ]\n}\n```. Tags: Prompt Design, Tokenization, CLI, OpenAI SDK, LLM Basics"
     }
   ],
   "H7sniPhIgmRiIydSkZjAV2QQplB2:H7sniPhIgmRiIydSkZjAV2QQplB2:notes": [
@@ -273,6 +285,22 @@
     {
       "role": "assistant",
       "content": "{\"intent\":\"answer\",\"answer\":\"Phase 1 Week 3 focuses on Prompt Orchestration & Evaluation, building on prompting fundamentals by orchestrating multi-sample runs, ranking outputs, enforcing formats (e.g., JSON), and measuring quality for more reliable results through structure, sampling, and lightweight evaluation.\",\"sources\":[\"phase-1-week-3.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "weather today in Surakarta Indonesia"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Surakarta, Indonesia is cloudy with a temperature of 22.9°C, feels like 25.2°C, humidity at 90%, and wind speed of 13.7 kph.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=Surakarta%2C%20Indonesia\"]}"
+    },
+    {
+      "role": "user",
+      "content": "summarize all phase 1 topics"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"tool-summary\",\"answer\":\"Phase 1 topics include: Week 1 - Prompting Fundamentals, focusing on effective LLM prompting; Week 2 - Embeddings & Retrieval, covering text embedding for semantic search and building a vector index; Week 3 - Prompt Orchestration & Evaluation, emphasizing orchestrating multi-sample runs and measuring output quality.\",\"sources\":[\"phase-1-week-1.md\",\"phase-1-week-2.md\",\"phase-1-week-3.md\"]}"
     }
   ],
   "try-me": [
