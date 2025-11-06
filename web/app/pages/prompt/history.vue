@@ -1,18 +1,12 @@
 <script setup lang="ts">
 import type { BreadcrumbItem } from '@nuxt/ui'
-import type {
-	HistoryEntry,
-	VisionHistory,
-	TranscriptionHistory,
-	TTSHistory,
-	ImageGenHistory,
-} from '@/helpers/types'
-import type { QueryDocumentSnapshot, Timestamp } from 'firebase/firestore'
+import type { HistoryEntry } from '@/helpers/types'
 
 import AppBreadcrumb from '@/components/app/AppBreadcrumb.vue'
 import HistoryList from '@/components/history/HistoryList.vue'
 import HistoryPromptCard from '@/components/history/HistoryPromptCard.vue'
 import HistorySimpleCard from '@/components/history/HistorySimpleCard.vue'
+import { useHistoryMappers } from '@/composables/useHistoryMappers'
 
 // Breadcrumb
 const breadcrumb: BreadcrumbItem[] = [
@@ -30,30 +24,8 @@ const tabs = [
 	{ label: 'Text → Speech', value: 'tts' },
 ]
 
-// Mappers
-function mapPlayground(doc: QueryDocumentSnapshot<HistoryEntry>): HistoryEntry {
-	const data = doc.data() as any
-	const createdAt = data?.createdAt as Timestamp | undefined
-	const at = createdAt?.toDate?.() ? createdAt.toDate().getTime() : data?.at ?? Date.now()
-	return { id: doc.id, ...data, at } as HistoryEntry
-}
-
-function mapVision(doc: QueryDocumentSnapshot<VisionHistory>): VisionHistory {
-	const data = doc.data() as any
-	return { id: doc.id, ...data } as VisionHistory
-}
-function mapTranscription(doc: QueryDocumentSnapshot<TranscriptionHistory>): TranscriptionHistory {
-	const data = doc.data() as any
-	return { id: doc.id, ...data } as TranscriptionHistory
-}
-function mapTTS(doc: QueryDocumentSnapshot<TTSHistory>): TTSHistory {
-	const data = doc.data() as any
-	return { id: doc.id, ...data } as TTSHistory
-}
-function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHistory {
-	const data = doc.data() as any
-	return { id: doc.id, ...data } as ImageGenHistory
-}
+// Shared mappers
+const { mapPlayground, mapVision, mapTranscription, mapTTS, mapImageGen } = useHistoryMappers()
 </script>
 
 <template>

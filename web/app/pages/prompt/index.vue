@@ -1,19 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { Firestore } from 'firebase/firestore'
-import { getDocs, addDoc, collection, serverTimestamp } from 'firebase/firestore'
 
 import { temperatureOptions } from '@/helpers/constants'
 import { handleFileReader } from '@/helpers/functions'
-import type {
-	RunResult,
-	HistoryEntry,
-	TaskOption,
-	VisionHistory,
-	TranscriptionHistory,
-	TTSHistory,
-	ImageGenHistory,
-} from '@/helpers/types'
+import type { RunResult, HistoryEntry, TaskOption } from '@/helpers/types'
+import PromptOutputList from '~/components/prompt/PromptOutputList.vue'
+import { usePromptApi } from '@/composables/usePromptApi'
+import { usePromptStream } from '@/composables/usePromptStream'
+import { useHistorySave } from '@/composables/useHistorySave'
 
 const toast = useToast()
 
@@ -67,11 +61,13 @@ const summaryMaxTokens = ref(200)
 const resetMemory = ref(false)
 const contextJson = ref<string>('')
 
-// Init Firestore
+// Init helpers and auth
 const nuxt = useNuxtApp()
-const db = (nuxt as any).$db as Firestore | undefined
 const auth = (nuxt as any).$auth as any
 const userId = computed<string | null>(() => (auth?.currentUser?.uid as string) || null)
+const { chat, vision, speechToText, textToSpeech, imageGeneration, models } = usePromptApi()
+const { streamOnce } = usePromptStream()
+const { saveText, saveVision, saveTranscription, saveTTS, saveImageGen } = useHistorySave()
 
 function parseContext(text: string): any | null {
 	if (!text || !text.trim()) return null
@@ -124,13 +120,25 @@ async function runPrompt() {
 					if (parsedCtx) body.context = parsedCtx
 					if (contextBudgetTokens.value) body.contextBudgetTokens = contextBudgetTokens.value
 
-					// Run the prompt
-					const res = await $fetch(`${apiBase}/prompt/chat`, {
-						method: 'POST',
-						body,
+					// Run the prompt via composable
+					const data = await chat({
+						prompt: prompt.value,
+						model: model.value.value,
+						maxTokens: maxTokens.value,
+						n: samples.value,
+						temperatures: temperatureSelection.value.length
+							? temperatureSelection.value.map((t) => t.value)
+							: [0.5],
+						context: parsedCtx || undefined,
+						useMemory: useMemory.value,
+						sessionId: sid,
+						reset: resetMemory.value,
+						memorySize: memorySize.value,
+						summarizeOverflow: summarizeOverflow.value,
+						summaryMaxTokens: summaryMaxTokens.value,
+						contextBudgetTokens: contextBudgetTokens.value ?? null,
 						headers: userId.value ? { 'x-user-id': userId.value } : undefined,
 					})
-					const data = res as any
 
 					// Process the response
 					const runs: RunResult[] = Array.isArray(data?.runs) ? data.runs : []
@@ -151,7 +159,7 @@ async function runPrompt() {
 						at: Date.now(),
 					}
 					outputRunPrompt.value = entry
-					await saveRecord(entry)
+					await saveText(entry)
 				} else {
 					await streamPrompt()
 				}
@@ -159,20 +167,16 @@ async function runPrompt() {
 			}
 			case 'image-vision': {
 				// Run the image vision prompt
-				const res = await $fetch(`${apiBase}/prompt/vision`, {
-					method: 'POST',
-					body: {
-						imageUrl: imageUrl.value || undefined,
-						imageBase64: imageBase64.value || undefined,
-						prompt: prompt.value || 'Describe the image.',
-						model: model.value.value,
-						maxTokens: maxTokens.value,
-					},
+				const data = await vision({
+					imageUrl: imageUrl.value || undefined,
+					imageBase64: imageBase64.value || undefined,
+					prompt: prompt.value || 'Describe the image.',
+					model: model.value.value,
+					maxTokens: maxTokens.value,
 				})
-				const data = res as any
 				responseText.value = data?.text || ''
 				// Save history (avoid large binaries; only store imageUrl if present)
-				await saveVisionRecord({
+				await saveVision({
 					...(prompt.value ? { prompt: prompt.value } : {}),
 					...(imageUrl.value ? { imageUrl: imageUrl.value } : {}),
 					text: data?.text || '',
@@ -184,13 +188,12 @@ async function runPrompt() {
 			}
 			case 'speech-to-text': {
 				// Run the speech-to-text prompt
-				const res = await $fetch(`${apiBase}/prompt/speech-to-text`, {
-					method: 'POST',
-					body: { audioBase64: audioBase64.value, model: model.value.value },
+				const data = await speechToText({
+					audioBase64: audioBase64.value,
+					model: model.value.value,
 				})
-				const data = res as any
 				responseText.value = data?.text || ''
-				await saveTranscriptionRecord({
+				await saveTranscription({
 					text: data?.text || '',
 					model: data?.model || model.value.value,
 					durationMs: data?.durationMs,
@@ -199,16 +202,12 @@ async function runPrompt() {
 			}
 			case 'text-to-speech': {
 				// Run the text-to-speech prompt
-				const res = await $fetch(`${apiBase}/prompt/text-to-speech`, {
-					method: 'POST',
-					body: {
-						text: prompt.value,
-						model: model.value.value,
-						voice: ttsVoice.value,
-						format: 'mp3',
-					},
+				const data = await textToSpeech({
+					text: prompt.value,
+					model: model.value.value,
+					voice: ttsVoice.value,
+					format: 'mp3',
 				})
-				const data = res as any
 
 				// Process the response
 				if (typeof data?.audioBase64 === 'string') {
@@ -217,7 +216,7 @@ async function runPrompt() {
 				} else {
 					responseText.value = 'Failed to generate speech.'
 				}
-				await saveTTSRecord({
+				await saveTTS({
 					text: prompt.value,
 					voice: ttsVoice.value,
 					model: data?.model || model.value.value,
@@ -227,16 +226,12 @@ async function runPrompt() {
 			}
 			case 'image-generation': {
 				// Generate an image from prompt
-				const res = await $fetch(`${apiBase}/prompt/image-generation`, {
-					method: 'POST',
-					body: {
-						prompt: prompt.value,
-						model: model.value.value,
-						size: imageSize.value,
-						format: 'png',
-					},
+				const data = await imageGeneration({
+					prompt: prompt.value,
+					model: model.value.value,
+					size: imageSize.value,
+					format: 'png',
 				})
-				const data = res as any
 				const b64 = data?.imageBase64
 				if (typeof b64 === 'string' && b64) {
 					generatedImageUrl.value = `data:image/png;base64,${b64}`
@@ -245,7 +240,7 @@ async function runPrompt() {
 					generatedImageUrl.value = ''
 					responseText.value = 'Failed to generate image.'
 				}
-				await saveImageGenRecord({
+				await saveImageGen({
 					prompt: prompt.value,
 					model: data?.model || model.value.value,
 					size: imageSize.value,
@@ -272,105 +267,36 @@ async function runPrompt() {
 }
 
 // Stream exactly one temperature and return a RunResult
-function streamOnce(temp: number) {
-	return new Promise<RunResult>((resolve, reject) => {
-		let url =
-			`${apiBase}/prompt/chat/stream?` +
-			`prompt=${encodeURIComponent(prompt.value)}` +
-			`&model=${encodeURIComponent(model.value.value)}` +
-			`&temperature=${encodeURIComponent(temp)}` +
-			`&maxTokens=${encodeURIComponent(maxTokens.value)}`
-
-		// Append context & memory controls for SSE
-		const sid = userId.value ? `${userId.value}:${sessionId.value}` : sessionId.value
-		url += `&useMemory=${encodeURIComponent(String(useMemory.value))}`
-		url += `&sessionId=${encodeURIComponent(sid)}`
-		url += `&memorySize=${encodeURIComponent(memorySize.value)}`
-		url += `&summarizeOverflow=${encodeURIComponent(String(summarizeOverflow.value))}`
-		url += `&summaryMaxTokens=${encodeURIComponent(summaryMaxTokens.value)}`
-		if (resetMemory.value) url += `&reset=true`
-		if (contextBudgetTokens.value)
-			url += `&contextBudgetTokens=${encodeURIComponent(contextBudgetTokens.value)}`
-		if (contextJson.value && contextJson.value.trim())
-			url += `&context=${encodeURIComponent(contextJson.value)}`
-
-		const es = new EventSource(url)
-
-		let started = 0
-		let buffer = ''
-		let usage: any = null
-		let completed = false
-
-		es.addEventListener('open', () => {
-			started = Date.now()
-
-			// Show which temperature is currently streaming
-			responseText.value = `T=${temp.toFixed(2)}: `
-		})
-
-		// Accumulate summary chunks into responseText for live feedback
-		es.addEventListener('summary', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				if (typeof data?.chunk === 'string') {
-					buffer += data.chunk
-					responseText.value = `T=${temp.toFixed(2)}: ` + buffer
-				}
-			} catch {}
-		})
-
-		// Final text
-		es.addEventListener('result', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				if (typeof data?.text === 'string') buffer = data.text
-			} catch {}
-		})
-
-		// Usage tokens
-		es.addEventListener('usage', (ev: MessageEvent) => {
-			try {
-				usage = JSON.parse(ev.data)
-			} catch {}
-		})
-
-		// Server error event from API
-		es.addEventListener('server_error', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				error.value = data?.error || 'Server error'
-			} catch {
-				error.value = 'Server error'
-			}
-			es.close()
-			reject(new Error(error.value || 'Server error'))
-		})
-
-		// Network error (ignore if already completed)
-		es.addEventListener('error', () => {
-			if (completed) {
-				es.close()
-				return
-			}
-			console.warn('Stream connection error')
-			es.close()
-			reject(new Error('Stream connection error'))
-		})
-
-		// End of stream: return single RunResult
-		es.addEventListener('end', () => {
-			completed = true
-			const durationMs = started ? Date.now() - started : 0
-			const run: RunResult = {
-				temperature: temp,
-				choices: [{ index: 0, text: buffer }],
-				usage,
-				durationMs,
-			}
-			es.close()
-			resolve(run)
-		})
-	})
+function streamOnceWrapper(temp: number) {
+	const sid = userId.value ? `${userId.value}:${sessionId.value}` : sessionId.value
+	return streamOnce(
+		{
+			baseURL: apiBase,
+			prompt: prompt.value,
+			model: model.value.value,
+			temperature: temp,
+			maxTokens: maxTokens.value,
+			useMemory: useMemory.value,
+			sessionId: sid,
+			memorySize: memorySize.value,
+			summarizeOverflow: summarizeOverflow.value,
+			summaryMaxTokens: summaryMaxTokens.value,
+			reset: resetMemory.value,
+			contextBudgetTokens: contextBudgetTokens.value ?? null,
+			contextJson: contextJson.value?.trim() ? contextJson.value : null,
+		},
+		{
+			onOpen: (t) => {
+				responseText.value = `T=${t.toFixed(2)}: `
+			},
+			onResult: (text) => {
+				responseText.value = `T=${temp.toFixed(2)}: ` + text
+			},
+			onError: (msg) => {
+				error.value = msg
+			},
+		}
+	)
 }
 
 // Stream across multiple temperatures sequentially and save a single history entry
@@ -382,7 +308,7 @@ async function streamPrompt() {
 	const runs: RunResult[] = []
 	for (const temp of temps) {
 		try {
-			const run = await streamOnce(temp)
+			const run = await streamOnceWrapper(temp)
 			runs.push(run)
 		} catch (e: any) {
 			const msg = e?.message || 'Streaming failed'
@@ -415,14 +341,14 @@ async function streamPrompt() {
 		at: Date.now(),
 	}
 	outputRunPrompt.value = entry
-	await saveRecord(entry)
+	await saveText(entry)
 }
 
 // Load available models from API
 async function handleLoadModel() {
 	loadingModels.value = true
 	try {
-		const res = await $fetch(`${apiBase}/prompt/models`)
+		const res = await models()
 		const list = (res as any)?.models
 
 		// Validate server response
@@ -469,127 +395,7 @@ const handleChangeAudio = async (e: Event) => {
 	audioBase64.value = await handleFileReader(e)
 }
 
-function cleanFirestoreEntry(entry: any) {
-	const cleaned: any = {}
-	for (const [k, v] of Object.entries(entry)) {
-		if (v !== undefined && v !== null) cleaned[k] = v
-	}
-	return cleaned
-}
-
-// Save a record to Firestore
-async function saveRecord(entry: {
-	prompt: string
-	model: string
-	temperatures: number[]
-	maxTokens: number
-	samples: number
-	runs: RunResult[]
-}) {
-	try {
-		if (!db) return console.warn('[save] missing db')
-
-		const cleaned: any = cleanFirestoreEntry(entry)
-
-		await addDoc(collection(db, 'promptTextHistory'), {
-			...cleaned,
-			type: 'text',
-			at: Date.now(),
-			createdAt: serverTimestamp(),
-		})
-	} catch (e: any) {
-		console.warn('[save] failed:', e?.message || e)
-		return
-	}
-}
-
-// Save: Vision
-async function saveVisionRecord(entry: {
-	prompt?: string
-	imageUrl?: string
-	text: string
-	model: string
-	usage?: any
-	durationMs?: number
-}) {
-	try {
-		if (!db) return console.warn('[save vision] missing db')
-
-		const cleaned: any = cleanFirestoreEntry(entry)
-
-		await addDoc(collection(db, 'visionHistory'), {
-			...cleaned,
-			type: 'vision',
-			at: Date.now(),
-			createdAt: serverTimestamp(),
-		})
-	} catch (e: any) {
-		console.warn('[save vision] failed:', e?.message || e)
-	}
-}
-
-// Save: Transcription
-async function saveTranscriptionRecord(entry: {
-	text: string
-	model: string
-	durationMs?: number
-}) {
-	try {
-		if (!db) return console.warn('[save transcription] missing db')
-
-		const cleaned: any = cleanFirestoreEntry(entry)
-
-		await addDoc(collection(db, 'transcriptionHistory'), {
-			...cleaned,
-			type: 'stt',
-			at: Date.now(),
-			createdAt: serverTimestamp(),
-		})
-	} catch (e: any) {
-		console.warn('[save transcription] failed:', e?.message || e)
-	}
-}
-
-// Save: TTS (metadata only; audio not persisted to avoid large docs)
-async function saveTTSRecord(entry: {
-	text: string
-	voice?: string
-	model: string
-	durationMs?: number
-}) {
-	try {
-		if (!db) return console.warn('[save tts] missing db')
-
-		const cleaned: any = cleanFirestoreEntry(entry)
-
-		await addDoc(collection(db, 'ttsHistory'), {
-			...cleaned,
-			type: 'tts',
-			at: Date.now(),
-			createdAt: serverTimestamp(),
-		})
-	} catch (e: any) {
-		console.warn('[save tts] failed:', e?.message || e)
-	}
-}
-
-// Save: Image Generation (metadata only)
-async function saveImageGenRecord(entry: { prompt: string; model: string; size?: string }) {
-	try {
-		if (!db) return console.warn('[save image gen] missing db')
-
-		const cleaned: any = cleanFirestoreEntry(entry)
-
-		await addDoc(collection(db, 'imageGenHistory'), {
-			...cleaned,
-			type: 'image',
-			at: Date.now(),
-			createdAt: serverTimestamp(),
-		})
-	} catch (e: any) {
-		console.warn('[save image gen] failed:', e?.message || e)
-	}
-}
+// Save helpers moved to useHistorySave composable
 
 onMounted(async () => {
 	await handleLoadModel()
@@ -917,37 +723,7 @@ watch(
 				</UCard>
 
 				<!-- Run Output -->
-				<div v-if="outputRunPrompt?.runs?.length" class="grid gap-3">
-					<UCard v-for="run in outputRunPrompt.runs" :key="run.temperature">
-						<div class="text-sm mb-2">Temperature: {{ run.temperature.toFixed(2) }}</div>
-						<div class="grid gap-2">
-							<UCard v-for="c in run.choices" :key="c.index" class="bg-white">
-								<div class="text-xs text-gray-500 mb-1">Sample {{ c.index + 1 }}</div>
-								<div class="flex items-start justify-between gap-2">
-									<div class="text-sm whitespace-pre-wrap">{{ c.text }}</div>
-									<UButton
-										size="xs"
-										color="neutral"
-										variant="soft"
-										icon="i-heroicons-clipboard"
-										@click="copyText(c.text)"
-										>Copy</UButton
-									>
-								</div>
-							</UCard>
-						</div>
-						<!-- Run Latency and Tokens -->
-						<div class="mt-3 text-xs text-gray-600">
-							Latency: {{ run.durationMs }} ms • Tokens: Prompt
-							{{ run?.usage?.prompt_tokens ?? 0 }} • Completion
-							{{ run?.usage?.completion_tokens ?? 0 }} • Total
-							{{
-								run?.usage?.total_tokens ??
-								(run?.usage?.prompt_tokens ?? 0) + (run?.usage?.completion_tokens ?? 0)
-							}}
-						</div>
-					</UCard>
-				</div>
+				<PromptOutputList :runs="outputRunPrompt?.runs" @copy="copyText" />
 			</div>
 		</UCard>
 	</UContainer>
