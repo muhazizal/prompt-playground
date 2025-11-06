@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { Firestore } from 'firebase/firestore'
-import { setDoc, doc, serverTimestamp } from 'firebase/firestore'
 import type { NoteResult } from '@/helpers/types'
+import { parseContext } from '@/helpers/functions'
+import NoteList from '@/components/notes/NoteList.vue'
+import NotesResultList from '@/components/notes/NotesResultList.vue'
+import NotesTagsForm from '~/components/notes/NotesTagsForm.vue'
+import { useNotesApi } from '@/composables/useNotesApi'
+import { useNotesStream } from '@/composables/useNotesStream'
+import { useNotesSave } from '@/composables/useNotesSave'
 
 const toast = useToast()
 
@@ -10,21 +15,10 @@ const toast = useToast()
 const runtime = useRuntimeConfig().public
 const apiBase = runtime.apiBase
 
-// Init Firestore
+// Init Auth
 const nuxt = useNuxtApp()
-const db = (nuxt as any).$db as Firestore | undefined
 const auth = (nuxt as any).$auth as any
 const userId = computed<string | null>(() => (auth?.currentUser?.uid as string) || null)
-
-function parseContext(text: string): any | null {
-	if (!text || !text.trim()) return null
-	try {
-		const obj = JSON.parse(text)
-		return obj && typeof obj === 'object' ? obj : null
-	} catch {
-		return null
-	}
-}
 
 // Notes state
 const files = ref<Array<{ name: string }>>([])
@@ -50,24 +44,6 @@ const tagsConfig = ref<string[]>([])
 const tagsLoading = ref(false)
 const tagsSaving = ref(false)
 
-// Simple price table (USD per 1M tokens) for cost estimation.
-// Note: Values are estimates; verify against current vendor pricing.
-const PRICE_PER_MILLION: Record<string, { input: number; output: number }> = {
-	'gpt-4o-mini': { input: 0.15, output: 0.6 },
-}
-
-function estimateCost(usage: any, model?: string | null) {
-	if (!usage || !model) return null
-	const price = PRICE_PER_MILLION[model]
-	if (!price) return null
-	const promptTokens = Number(usage?.prompt_tokens ?? 0)
-	const completionTokens = Number(usage?.completion_tokens ?? 0)
-	const cost =
-		(promptTokens / 1_000_000) * price.input + (completionTokens / 1_000_000) * price.output
-	// Round to 4 decimal places for display
-	return Math.round(cost * 10000) / 10000
-}
-
 // Load notes on mount
 onMounted(async () => {
 	await loadList()
@@ -75,16 +51,17 @@ onMounted(async () => {
 })
 
 // Load notes list
+const { listNotes, getTags, saveTags, processNotes } = useNotesApi()
+const { summarizeFileStream } = useNotesStream()
+const { saveSummary } = useNotesSave()
+
 async function loadList(refresh = false) {
 	loadingList.value = true
 	error.value = null
-
 	try {
-		const res = await $fetch(`${apiBase}/notes/list`)
+		const res = await listNotes()
 		const list = (res as any)?.files || []
-
 		files.value = Array.isArray(list) ? list : []
-
 		if (refresh) {
 			toast.add({
 				title: 'Notes loaded',
@@ -108,11 +85,9 @@ async function loadList(refresh = false) {
 async function loadTagsConfig(refresh = false) {
 	tagsLoading.value = true
 	try {
-		const res = await $fetch(`${apiBase}/notes/tags`)
+		const res = await getTags()
 		const tags = (res as any)?.tags || []
-
 		tagsConfig.value = Array.isArray(tags) ? tags : []
-
 		if (refresh) {
 			toast.add({
 				title: 'Tag config loaded',
@@ -136,11 +111,8 @@ async function loadTagsConfig(refresh = false) {
 async function saveTagsConfig() {
 	tagsSaving.value = true
 	try {
-		// Validate tags
 		const clean = tagsConfig.value.map((t) => t.trim()).filter((t) => !!t)
-
-		await $fetch(`${apiBase}/notes/tags`, { method: 'POST', body: { tags: clean } })
-
+		await saveTags(clean)
 		toast.add({
 			title: 'Tag config saved',
 			description: `Saved ${clean.length} tags`,
@@ -172,13 +144,11 @@ async function processSelected() {
 	processing.value = true
 	error.value = null
 	results.value = []
-
 	try {
-		// Handle normal processing
 		if (!useStreaming.value) {
 			const sid = userId.value ? `${userId.value}:${sessionId.value}` : sessionId.value
-			const parsedCtx = parseContext(contextJson.value)
-			const body: any = {
+			const ctx = parseContext(contextJson.value)
+			const res = await processNotes({
 				paths: selected.value,
 				useMemory: useMemory.value,
 				sessionId: sid,
@@ -186,31 +156,18 @@ async function processSelected() {
 				memorySize: memorySize.value,
 				summarizeOverflow: summarizeOverflow.value,
 				summaryMaxTokens: summaryMaxTokens.value,
-			}
-			if (parsedCtx) body.context = parsedCtx
-			if (contextBudgetTokens.value) body.contextBudgetTokens = contextBudgetTokens.value
-			const res = await $fetch(`${apiBase}/notes/process`, {
-				method: 'POST',
-				body,
+				context: ctx || undefined,
+				contextBudgetTokens: contextBudgetTokens.value ?? null,
 				headers: userId.value ? { 'x-user-id': userId.value } : undefined,
 			})
-
 			results.value = ((res as any)?.results || []) as NoteResult[]
-
-			// Save each successful summary to Firestore (unique by file name)
-			for (const r of results.value) {
-				await saveSummaryRecord(r)
-			}
-
-			// History fetching moved to dedicated page
-
+			for (const r of results.value) await saveSummary(r)
 			toast.add({
 				title: 'Notes processed',
 				description: `Processed ${results.value.length} notes`,
 				color: 'success',
 			})
 		} else {
-			// Handle streaming processing
 			await processSelectedStreaming()
 		}
 	} catch (e: any) {
@@ -228,150 +185,39 @@ async function processSelected() {
 // Process selected notes using streaming
 async function processSelectedStreaming() {
 	for (const name of selected.value) {
-		await streamSummarizeFile(name)
-	}
-}
-
-// Stream summarize a file
-async function streamSummarizeFile(name: string) {
-	return new Promise<void>((resolve) => {
-		// Create EventSource to stream results with context/memory controls
 		const sid = userId.value ? `${userId.value}:${sessionId.value}` : sessionId.value
-		let url = `${apiBase}/notes/summarize-stream?path=${encodeURIComponent(name)}`
-		url += `&useMemory=${encodeURIComponent(String(useMemory.value))}`
-		url += `&sessionId=${encodeURIComponent(sid)}`
-		url += `&memorySize=${encodeURIComponent(memorySize.value)}`
-		url += `&summarizeOverflow=${encodeURIComponent(String(summarizeOverflow.value))}`
-		url += `&summaryMaxTokens=${encodeURIComponent(summaryMaxTokens.value)}`
-		if (resetMemory.value) url += `&reset=true`
-		if (contextBudgetTokens.value)
-			url += `&contextBudgetTokens=${encodeURIComponent(contextBudgetTokens.value)}`
-		if (contextJson.value && contextJson.value.trim())
-			url += `&context=${encodeURIComponent(contextJson.value)}`
-		const es = new EventSource(url)
-
-		// Initialize partial result object
-		const partial: any = { file: name, summary: '', tags: [] }
-
-		// Track completion to avoid treating normal close as an error
-		let completed = false
-
-		// Debug: connection opened
-		es.addEventListener('open', () => {
-			console.log('Stream opened for', partial.file)
-		})
-
-		// Handle summary events
-		es.addEventListener('summary', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				if (data?.chunk) partial.summary += data.chunk
-			} catch {}
-		})
-		// Handle result events
-		es.addEventListener('result', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				partial.summary = data?.summary || partial.summary
-				partial.tags = Array.isArray(data?.tags) ? data.tags : partial.tags
-				if (typeof data?.model === 'string') partial.model = data.model
-			} catch {}
-		})
-		// Handle evaluation events
-		es.addEventListener('evaluation', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				partial.evaluation = data
-			} catch {}
-		})
-		// Handle usage events
-		es.addEventListener('usage', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				partial.usage = data
-			} catch {}
-		})
-		// Handle server-sent error events (from API)
-		es.addEventListener('server_error', (ev: MessageEvent) => {
-			try {
-				const data = JSON.parse(ev.data)
-				toast.add({
-					title: 'Failed to process note',
-					description: `Error processing ${partial.file}: ${data?.error || 'Unknown error'}`,
-					color: 'error',
-				})
-			} catch {
-				toast.add({
-					title: 'Failed to process note',
-					description: `Error processing ${partial.file}: server error`,
-					color: 'error',
-				})
+		const ctxJson = contextJson.value?.trim() ? contextJson.value : null
+		const result = await summarizeFileStream(
+			{
+				baseURL: apiBase,
+				path: name,
+				useMemory: useMemory.value,
+				sessionId: sid,
+				memorySize: memorySize.value,
+				summarizeOverflow: summarizeOverflow.value,
+				summaryMaxTokens: summaryMaxTokens.value,
+				reset: resetMemory.value,
+				contextBudgetTokens: contextBudgetTokens.value ?? null,
+				contextJson: ctxJson,
+			},
+			{
+				onOpen: (file) => console.log('Stream opened for', file),
+				onError: (msg) => {
+					toast.add({ title: 'Stream error', description: msg, color: 'error' })
+				},
+				onEnd: async (r) => {
+					results.value.push(r)
+					await saveSummary(r)
+					toast.add({
+						title: 'Note processed',
+						description: `Processed ${r.file}`,
+						color: 'success',
+					})
+				},
 			}
-			es.close()
-		})
-		// Handle network errors from EventSource (ignore if stream already completed)
-		es.addEventListener('error', (_ev: MessageEvent) => {
-			if (completed) {
-				es.close()
-				return
-			}
-			console.warn('Stream connection error for', partial.file)
-			toast.add({
-				title: 'Stream connection error',
-				description: `Could not connect: ${partial.file}`,
-				color: 'error',
-			})
-			es.close()
-		})
-		// Handle end events
-		es.addEventListener('end', async () => {
-			completed = true
-			results.value.push(partial as NoteResult)
-
-			// Save successful streaming result to Firestore (unique by file name)
-			await saveSummaryRecord(partial as NoteResult)
-
-			toast.add({
-				title: 'Note processed',
-				description: `Processed ${partial.file}`,
-				color: 'success',
-			})
-			es.close()
-			resolve()
-		})
-	})
-}
-
-// Save summary to Firestore with unique doc id per file name
-async function saveSummaryRecord(r: NoteResult) {
-	try {
-		if (!db) return console.warn('[save] missing db')
-
-		const ref = doc(db, 'notesSummaries', r.file)
-		const payload = {
-			file: r.file,
-			summary: r.summary,
-			tags: r.tags || [],
-			usage: r.usage || null,
-			evaluation: r.evaluation || null,
-			model: r.model || null,
-			updatedAt: serverTimestamp(),
-		}
-
-		// Use setDoc to override existing doc by file name (unique constraint)
-		await setDoc(ref, payload, { merge: true })
-	} catch (e: any) {
-		console.warn('[save] failed:', e?.message || e)
-		toast.add({
-			title: 'Failed to save summary',
-			description: e?.data?.error || e?.message || 'Unknown error',
-			color: 'error',
-		})
+		)
 	}
 }
-
-// Load saved summary histories from Firestore
-// History fetching moved to dedicated page
 
 // Copy text to clipboard
 function copyText(text: string) {
@@ -422,49 +268,30 @@ function copyText(text: string) {
 								:loading="loadingList"
 								icon="i-heroicons-arrow-path"
 								@click="loadList(true)"
-								>Reload Notes</UButton
 							>
+								Reload Notes
+							</UButton>
 						</div>
 					</div>
-					<div class="text-xs text-gray-600 mb-2 mt-1">Select notes to process.</div>
-					<div class="grid md:grid-cols-2 gap-3">
-						<UCard v-for="f in files" :key="f.name">
-							<div class="flex items-center justify-between">
-								<div class="text-sm">{{ f.name }}</div>
-								<UCheckbox :value="f.name" @change="handleChangeFiles(f.name)" />
-							</div>
-						</UCard>
-					</div>
+					<NoteList
+						:files="files"
+						:selected="selected"
+						:loading="loadingList"
+						@toggle="handleChangeFiles"
+					/>
 				</div>
 
 				<hr class="text-gray-300" />
 
 				<!-- Tag Set -->
 				<div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-semibold">Tag Set</span>
-						<div class="flex gap-2">
-							<UButton
-								size="xs"
-								color="neutral"
-								variant="soft"
-								:loading="tagsLoading"
-								@click="loadTagsConfig(true)"
-								icon="i-heroicons-arrow-path"
-								>Reload Tags</UButton
-							>
-							<UButton
-								size="xs"
-								color="primary"
-								:loading="tagsSaving"
-								@click="saveTagsConfig"
-								icon="i-heroicons-check"
-								>Save Tags</UButton
-							>
-						</div>
-					</div>
-					<div class="text-xs text-gray-600 mb-2 mt-1">Enter after typing each tag.</div>
-					<UInputTags v-model="tagsConfig" size="lg" />
+					<NotesTagsForm
+						v-model="tagsConfig"
+						:loading="tagsLoading"
+						:saving="tagsSaving"
+						@reload="loadTagsConfig(true)"
+						@save="saveTagsConfig"
+					/>
 				</div>
 
 				<hr class="text-gray-300" />
@@ -592,53 +419,7 @@ function copyText(text: string) {
 				/>
 
 				<!-- Processed Results -->
-				<div v-if="results.length" class="grid gap-4">
-					<UCard v-for="r in results" :key="r.file" class="bg-gray-50">
-						<div class="flex items-center justify-between mb-2">
-							<span class="text-sm font-semibold">{{ r.file }}</span>
-							<UButton
-								size="xs"
-								color="neutral"
-								variant="soft"
-								icon="i-heroicons-clipboard"
-								@click="copyText(r.summary)"
-								>Copy Summary</UButton
-							>
-						</div>
-						<div class="text-sm whitespace-pre-wrap">{{ r.summary }}</div>
-						<div class="mt-3 flex flex-wrap gap-2">
-							<UBadge v-for="t in r.tags" :key="t" color="primary" variant="soft">{{ t }}</UBadge>
-						</div>
-						<div v-if="r.evaluation" class="mt-2 text-xs text-gray-700">
-							Coverage {{ (r.evaluation.coverage * 100).toFixed(0) }}% • Concision
-							{{ (r.evaluation.concision * 100).toFixed(0) }}% • Formatting
-							{{ ((r.evaluation.formatting ?? 0) * 100).toFixed(0) }}% • Factuality
-							{{ ((r.evaluation.factuality ?? 0) * 100).toFixed(0) }}%
-							<div v-if="r.evaluation.feedback" class="mt-1">{{ r.evaluation.feedback }}</div>
-						</div>
-						<div v-if="r.usage" class="mt-2 text-xs text-gray-600">
-							Tokens: Prompt {{ r?.usage?.prompt_tokens ?? 0 }} • Completion
-							{{ r?.usage?.completion_tokens ?? 0 }} • Total
-							{{
-								r?.usage?.total_tokens ??
-								(r?.usage?.prompt_tokens ?? 0) + (r?.usage?.completion_tokens ?? 0)
-							}}
-							<div class="my-1 flex items-center gap-2">
-								<UBadge size="sm" color="neutral" variant="soft"
-									>Model {{ r.model ?? 'gpt-4o-mini' }}</UBadge
-								>
-								<UBadge
-									v-if="estimateCost(r.usage, r.model) !== null"
-									size="sm"
-									color="primary"
-									variant="soft"
-								>
-									Cost est. ${{ estimateCost(r.usage, r.model) }}
-								</UBadge>
-							</div>
-						</div>
-					</UCard>
-				</div>
+				<NotesResultList :results="results" @copy="copyText" />
 			</div>
 		</UCard>
 	</UContainer>

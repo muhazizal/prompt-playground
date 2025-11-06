@@ -22,3 +22,14 @@ export function removeNullOrUndefinedKeys(payload: any): any {
 	}
 	return payload
 }
+
+// Safely parse JSON context; returns object or null
+export function parseContext(text: string): any | null {
+	if (!text || !text.trim()) return null
+	try {
+		const obj = JSON.parse(text)
+		return obj && typeof obj === 'object' ? obj : null
+	} catch {
+		return null
+	}
+}

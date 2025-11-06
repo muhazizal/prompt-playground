@@ -105,6 +105,18 @@
     {
       "role": "assistant",
       "content": "Summary: ```json\n{\n  \"summary\": \"In Week 1 of Phase 1, the focus is on the fundamentals of effective prompting for language models, covering prompt structure, key parameters, tokenization, and reusable templates. Key concepts include the anatomy of prompts, controlling output variability with parameters like temperature and max tokens, and the importance of budgeting to avoid truncation and costs. Practical examples and templates for common tasks are provided, emphasizing the need for clear instructions and constraints to enhance output quality. The week concludes with reflections on balancing determinism and creativity in outputs and the importance of managing token budgets.\",\n  \"tags\": [\n    \"prompting\",\n    \"LLM\",\n    \"tokenization\",\n    \"output quality\",\n    \"budgeting\"\n  ]\n}\n```. Tags: Prompt Design, Tokenization, CLI, OpenAI SDK, LLM Basics"
+    },
+    {
+      "role": "assistant",
+      "content": "Summary: ```json\n{\n  \"summary\": \"In Week 1 of Phase 1, the focus is on the fundamentals of effective prompting for language models, covering prompt structure, key parameters, tokenization, and reusable templates. Key concepts include the anatomy of prompts, controlling output variability with parameters like temperature and max tokens, and the importance of budgeting to avoid truncation and costs. Practical examples and templates for common tasks are provided, emphasizing the need for clear instructions and constraints to enhance output quality. The week concludes with reflections on balancing determinism and creativity in outputs and the importance of managing token budgets.\",\n  \"tags\": [\n    \"prompting\",\n    \"LLM\",\n    \"tokenization\",\n    \"output quality\",\n    \"budgeting\"\n  ]\n}\n```. Tags: Prompt Design, Tokenization, CLI, OpenAI SDK, LLM Basics"
+    },
+    {
+      "role": "assistant",
+      "content": "Summary: ```json\n{\n  \"summary\": \"In Week 3 of Phase 1, the focus is on prompt orchestration and evaluation to enhance output reliability. Key objectives include running prompts with multiple temperature settings, defining output formats, and ranking results using task-specific heuristics. The process emphasizes budget awareness, as sampling increases token usage and costs. Implementation steps involve creating a sampling strategy, encoding heuristics for evaluation, and ensuring format compliance. The week concludes with reflections on effective temperature selection and the importance of structured outputs.\",\n  \"tags\": [\n    \"Prompt Orchestration\",\n    \"Output Evaluation\",\n    \"Multi-Sampling\",\n    \"Heuristics\",\n    \"Cost Management\"\n  ]\n}\n```. Tags: Prompt Design, Tokenization, OpenAI SDK, CLI, Reasoning"
+    },
+    {
+      "role": "assistant",
+      "content": "Summary: ```json\n{\n  \"summary\": \"In Week 2 of Phase 1, the focus is on embedding text for semantic search and building a vector index for retrieval-augmented generation (RAG). Key objectives include understanding text embeddings, creating a vector store with metadata, and evaluating retrieval quality. The process involves chunking documents, caching vectors, and implementing cosine similarity for ranking. The note also emphasizes the importance of balancing chunk size, overlap, and retrieval costs while providing implementation steps and testing guidelines.\",\n  \"tags\": [\n    \"Embeddings\",\n    \"Semantic Search\",\n    \"Vector Index\",\n    \"Retrieval-Augmented Generation\",\n    \"Cosine Similarity\"\n  ]\n}\n```. Tags: Embeddings, OpenAI SDK, Tokenization, Prompt Design, Firebase"
     }
   ],
   "H7sniPhIgmRiIydSkZjAV2QQplB2:H7sniPhIgmRiIydSkZjAV2QQplB2:notes": [
