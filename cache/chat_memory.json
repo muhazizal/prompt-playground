@@ -329,6 +329,14 @@
     {
       "role": "assistant",
       "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Yogyakarta is patchy rain nearby with a temperature of 22.8°C, feels like 25.1°C, humidity at 94%, and wind speed of 3.6 kph.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=Yogyakarta\"]}"
+    },
+    {
+      "role": "user",
+      "content": "weather tomorrow in Yogyakarta"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Weather information for tomorrow in Yogyakarta is not available at the moment.\",\"sources\":[]}"
     }
   ],
   "try-me": [

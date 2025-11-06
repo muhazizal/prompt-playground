@@ -4,9 +4,55 @@ import AgentResult from '@/components/agent/AgentResult.vue'
 import type { AgentRunRequest } from '@/helpers/types'
 
 const { loading, error, result, runAgent } = useAgent()
+const { runAgentStream } = useAgentStream()
+const streamEnabled = ref(false)
+
+function onClear() {
+	error.value = null
+	result.value = null
+}
 
 async function onRun(payload: AgentRunRequest) {
-	await runAgent(payload)
+	if (!streamEnabled.value) {
+		await runAgent(payload)
+		return
+	}
+
+	// Run via SSE streaming
+	const config = useRuntimeConfig()
+	loading.value = true
+	error.value = null
+	result.value = { answer: '', sources: [] }
+	await runAgentStream(
+		{ ...payload, baseURL: config.public.apiBase },
+		{
+			onStep: (name) => {
+				if (result.value) {
+					const steps = Array.isArray(result.value.steps) ? result.value.steps : []
+					steps.push({ name })
+					;(result.value as any).steps = steps
+				}
+			},
+			onSummary: (chunk) => {
+				if (result.value && typeof chunk === 'string') {
+					result.value.answer += chunk
+				}
+			},
+			onResult: (res) => {
+				result.value = res
+			},
+			onUsage: (u) => {
+				if (result.value) result.value.usage = u
+			},
+			onError: (msg) => {
+				error.value = msg
+				loading.value = false
+			},
+			onEnd: () => {
+				loading.value = false
+			},
+		}
+	)
 }
 </script>
 
@@ -20,7 +66,12 @@ async function onRun(payload: AgentRunRequest) {
 		</div>
 
 		<div class="grid gap-6">
-			<AgentForm :loading="loading" @submit="onRun" />
+			<AgentForm
+				:loading="loading"
+				v-model:streamEnabled="streamEnabled"
+				@submit="onRun"
+				@clear="onClear"
+			/>
 
 			<AgentResult :result="result" :error="error" :loading="loading" />
 		</div>

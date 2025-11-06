@@ -4,8 +4,16 @@ import { removeNullOrUndefinedKeys } from '@/helpers/functions'
 import type { AgentRunRequest } from '@/helpers/types'
 
 // Props allow overriding defaults
-const props = defineProps<{ defaults?: Partial<AgentRunRequest>; loading?: boolean }>()
-const emit = defineEmits<{ (e: 'submit', payload: AgentRunRequest): void }>()
+const props = defineProps<{
+	defaults?: Partial<AgentRunRequest>
+	loading?: boolean
+	streamEnabled?: boolean
+}>()
+const emit = defineEmits<{
+	(e: 'submit', payload: AgentRunRequest): void
+	(e: 'clear'): void
+	(e: 'update:streamEnabled', value: boolean): void
+}>()
 
 const form = reactive({
 	prompt: props.defaults?.prompt ?? '',
@@ -102,7 +110,15 @@ function onSubmit() {
 				</div>
 			</div>
 
-			<div class="flex justify-end">
+			<div class="flex justify-end gap-3">
+				<USwitch
+					:model-value="streamEnabled"
+					checked-icon="i-heroicons-wifi"
+					unchecked-icon="i-heroicons-no-symbol"
+					label="Stream Prompt"
+					description="Real-time result"
+					@update:model-value="(value) => emit('update:streamEnabled', value)"
+				/>
 				<UButton
 					class="h-full"
 					color="primary"
@@ -112,6 +128,9 @@ function onSubmit() {
 					@click="onSubmit"
 				>
 					Run Agent
+				</UButton>
+				<UButton color="neutral" variant="soft" icon="i-heroicons-trash" @click="emit('clear')">
+					Clear Output
 				</UButton>
 			</div>
 		</div>

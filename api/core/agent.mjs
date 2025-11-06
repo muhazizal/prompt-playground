@@ -492,3 +492,135 @@ export async function runAgent(
 
 	return result
 }
+
+/**
+ * Stream the mini agent run via callbacks.
+ * Sends step updates and partial JSON chunks during LLM streaming.
+ * onEvent is called with (type, payload) where type is one of:
+ * - 'step' | 'summary' | 'result' | 'usage'
+ */
+export async function runAgentStream(
+	{
+		prompt,
+		sessionId = 'mini-agent',
+		useMemory = true,
+		model = 'gpt-4o-mini',
+		temperature = 0.2,
+		maxTokens = 400,
+	} = {},
+	{ client: clientOverride, debug = false, onEvent } = {}
+) {
+	if (!prompt || typeof prompt !== 'string') throw new Error('Missing prompt')
+	const client = clientOverride || getOpenAIClient(process.env.OPENAI_API_KEY)
+
+	// Tools planning
+	const steps = ['init']
+	const toolsContext = {}
+	const { wantsWeather: hw, wantsDocs: hd } = planTools(prompt)
+
+	const classification = await classifyIntent(client, prompt)
+	steps.push(`classify:${classification.intent}:${String(classification.confidence ?? 0)}`)
+	onEvent?.('step', { name: steps[steps.length - 1] })
+
+	const wantsWeather = hw || classification.intent === 'weather'
+	const wantsDocs =
+		hd ||
+		classification.intent === 'list_notes' ||
+		classification.intent === 'count_notes' ||
+		classification.intent === 'titles' ||
+		classification.intent === 'find_note' ||
+		classification.intent === 'summarize_note' ||
+		classification.intent === 'search_docs' ||
+		classification.intent === 'multi'
+
+	if (wantsWeather) {
+		const { weather, steps: ws } = await planWeatherTool(prompt, classification)
+		if (weather) toolsContext.weather = weather
+		for (const s of ws) {
+			steps.push(s)
+			onEvent?.('step', { name: s })
+		}
+	}
+
+	if (wantsDocs) {
+		const { context: dctx, steps: ds } = await planDocsTools(client, prompt, classification)
+		Object.assign(toolsContext, dctx)
+		for (const s of ds) {
+			steps.push(s)
+			onEvent?.('step', { name: s })
+		}
+	}
+
+	steps.push('tools:done')
+	onEvent?.('step', { name: 'tools:done' })
+
+	const {
+		messages,
+		memorySummary,
+		step: memStep,
+	} = await buildMessages({
+		client,
+		prompt,
+		useMemory,
+		sessionId,
+		model,
+		toolsContext,
+	})
+	steps.push(memStep)
+	onEvent?.('step', { name: memStep })
+
+	const started = Date.now()
+	const stream = await client.chat.completions.create({
+		model,
+		temperature,
+		max_tokens: maxTokens,
+		response_format: { type: 'json_object' },
+		messages,
+		stream: true,
+		stream_options: { include_usage: true },
+	})
+
+	let fullText = ''
+	let usage = null
+
+	for await (const part of stream) {
+		const chunk = part?.choices?.[0]?.delta?.content || ''
+		if (chunk) {
+			fullText += chunk
+			onEvent?.('summary', { chunk })
+		}
+		if (part?.usage) usage = part.usage
+	}
+
+	const durationMs = Date.now() - started
+	const text = fullText
+	const { normalized: rawNormalized, errors } = validateResultShape(text)
+	const normalized = finalizeAnswer(rawNormalized, toolsContext)
+
+	// Persist memory
+	await appendMessage(sessionId, { role: 'user', content: prompt })
+	await appendMessage(sessionId, { role: 'assistant', content: text })
+
+	const combinedSources = assembleSources({ normalized, toolsContext, memorySummary, useMemory })
+
+	const result = {
+		...normalized,
+		model,
+		temperature,
+		maxTokens,
+		usage,
+		durationMs,
+		sources: combinedSources,
+		costUsd: estimateCostUSD(usage || null, model),
+		steps,
+	}
+
+	if (debug) {
+		result.debug = { messages, toolsContext, validationErrors: errors }
+	}
+
+	onEvent?.('result', result)
+	if (usage) onEvent?.('usage', usage)
+
+	return result
+}
