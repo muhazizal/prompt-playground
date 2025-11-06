@@ -501,7 +501,7 @@ function copyText(text: string) {
 							</div>
 						</div>
 
-						<div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 							<div>
 								<div class="flex items-center justify-between">
 									<span class="text-sm font-semibold">Context Budget Tokens</span>
@@ -566,8 +566,9 @@ function copyText(text: string) {
 					/>
 					<UButton
 						class="h-full"
-						:loading="processing"
 						icon="i-heroicons-play"
+						:loading="processing"
+						:disabled="selected.length === 0"
 						@click="processSelected"
 						>Run Assistant</UButton
 					>

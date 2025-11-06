@@ -74,7 +74,7 @@ Build a “Mini AI Agent” — a modular Node.js app that can:
 Runnable example:
 
 ```bash
-node examples/mini_agent.mjs --prompt "What is the weather and what did we learn last week?" --sessionId week4 --temp 0.2 --max 256
+node examples/mini_agent.mjs --prompt "What’s the weather in London and Summarize phase-1 week-2 notes." --sessionId week4 --temp 0.2 --max 256
 ```
 
 Outputs include:

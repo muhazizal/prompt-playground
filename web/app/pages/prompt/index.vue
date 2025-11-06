@@ -693,7 +693,7 @@ watch(
 					</div>
 					<!-- Samples -->
 					<div v-if="selectedTask.task === 'text-generation' && !useStreaming">
-						<div class="flex items-center justify-between mb-1">
+						<div class="flex items-center justify-between">
 							<span class="text-sm font-semibold">Samples</span>
 							<span class="text-sm">{{ samples }}</span>
 						</div>
@@ -704,12 +704,12 @@ watch(
 					</div>
 					<!-- Max Tokens (text & vision only) -->
 					<div v-if="['text-generation', 'image-vision'].includes(selectedTask.task)">
-						<div class="flex items-center justify-between mb-1">
+						<div class="flex items-center justify-between">
 							<span class="text-sm font-semibold">Max Tokens</span>
 							<span class="text-sm">{{ maxTokens }}</span>
 						</div>
 						<div class="text-xs text-gray-600 mt-1 mb-2">
-							Select the maximum number of tokens to generate.
+							Set the max number of tokens to generate.
 						</div>
 						<USlider v-model="maxTokens" :min="32" :max="1024" :step="16" />
 					</div>
@@ -724,7 +724,7 @@ watch(
 						<div class="grid gap-6">
 							<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 								<div>
-									<div class="flex items-center justify-between mb-1">
+									<div class="flex items-center justify-between">
 										<span class="text-sm font-semibold">Use Memory</span>
 									</div>
 									<div class="text-xs text-gray-600 mt-1 mb-2">
@@ -733,7 +733,7 @@ watch(
 									<USwitch v-model="useMemory" label="Enable memory" />
 								</div>
 								<div>
-									<div class="flex items-center justify-between mb-1">
+									<div class="flex items-center justify-between">
 										<span class="text-sm font-semibold">Session ID</span>
 									</div>
 									<div class="text-xs text-gray-600 mt-1 mb-2">
@@ -742,7 +742,7 @@ watch(
 									<UInput v-model="sessionId" placeholder="chat" class="w-full" />
 								</div>
 								<div>
-									<div class="flex items-center justify-between mb-1">
+									<div class="flex items-center justify-between">
 										<span class="text-sm font-semibold">Memory Size</span>
 										<span class="text-sm">{{ memorySize }}</span>
 									</div>
@@ -753,9 +753,9 @@ watch(
 								</div>
 							</div>
 
-							<div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+							<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 								<div>
-									<div class="flex items-center justify-between mb-1">
+									<div class="flex items-center justify-between">
 										<span class="text-sm font-semibold">Context Budget Tokens</span>
 									</div>
 									<div class="text-xs text-gray-600 mt-1 mb-2">
@@ -769,7 +769,7 @@ watch(
 									/>
 								</div>
 								<div>
-									<div class="flex items-center justify-between mb-1">
+									<div class="flex items-center justify-between">
 										<span class="text-sm font-semibold">Overflow Summarization</span>
 									</div>
 									<div class="text-xs text-gray-600 mt-1 mb-2">
@@ -778,7 +778,7 @@ watch(
 									<USwitch v-model="summarizeOverflow" label="Summarize overflow context" />
 								</div>
 								<div>
-									<div class="flex items-center justify-between mb-1">
+									<div class="flex items-center justify-between">
 										<span class="text-sm font-semibold">Summary Max Tokens</span>
 										<span class="text-sm">{{ summaryMaxTokens }}</span>
 									</div>
@@ -790,7 +790,7 @@ watch(
 							</div>
 
 							<div>
-								<div class="flex items-center justify-between mb-1">
+								<div class="flex items-center justify-between">
 									<span class="text-sm font-semibold">Reset Memory</span>
 								</div>
 								<div class="text-xs text-gray-600 mt-1 mb-2">Clear session on next run.</div>
@@ -875,7 +875,12 @@ watch(
 						label="Stream Prompt"
 						description="Real-time result"
 					/>
-					<UButton class="h-full" :loading="loading" icon="i-heroicons-play" @click="runPrompt"
+					<UButton
+						class="h-full"
+						icon="i-heroicons-play"
+						:loading="loading"
+						:disabled="!prompt.trim()"
+						@click="runPrompt"
 						>Run Prompt</UButton
 					>
 					<UButton
