@@ -9,7 +9,7 @@ import type {
 	ImageGenHistory,
 } from '@/helpers/types'
 
-export function useHistoryMappers() {
+export function usePromptHistoryMappers() {
 	function mapPlayground(doc: QueryDocumentSnapshot<any>): HistoryEntry {
 		const data = doc.data() as any
 		const createdAt = data?.createdAt as Timestamp | undefined

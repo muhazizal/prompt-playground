@@ -12,7 +12,7 @@ function cleanEntry(entry: any) {
 	return cleaned
 }
 
-export function useHistorySave() {
+export function usePromptSave() {
 	const nuxt = useNuxtApp()
 	const db = (nuxt as any).$db as Firestore | undefined
 

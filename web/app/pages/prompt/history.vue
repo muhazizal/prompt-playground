@@ -6,7 +6,7 @@ import AppBreadcrumb from '@/components/app/AppBreadcrumb.vue'
 import HistoryList from '@/components/history/HistoryList.vue'
 import HistoryPromptCard from '@/components/history/HistoryPromptCard.vue'
 import HistorySimpleCard from '@/components/history/HistorySimpleCard.vue'
-import { useHistoryMappers } from '@/composables/useHistoryMappers'
+import { usePromptHistoryMappers } from '~/composables/usePromptHistoryMappers'
 
 // Breadcrumb
 const breadcrumb: BreadcrumbItem[] = [
@@ -25,7 +25,8 @@ const tabs = [
 ]
 
 // Shared mappers
-const { mapPlayground, mapVision, mapTranscription, mapTTS, mapImageGen } = useHistoryMappers()
+const { mapPlayground, mapVision, mapTranscription, mapTTS, mapImageGen } =
+	usePromptHistoryMappers()
 </script>
 
 <template>

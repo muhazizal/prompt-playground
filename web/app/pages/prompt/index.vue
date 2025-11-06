@@ -7,7 +7,7 @@ import type { RunResult, HistoryEntry, TaskOption } from '@/helpers/types'
 import PromptOutputList from '~/components/prompt/PromptOutputList.vue'
 import { usePromptApi } from '@/composables/usePromptApi'
 import { usePromptStream } from '@/composables/usePromptStream'
-import { useHistorySave } from '@/composables/useHistorySave'
+import { usePromptSave } from '~/composables/usePromptSave'
 
 const toast = useToast()
 
@@ -67,7 +67,7 @@ const auth = (nuxt as any).$auth as any
 const userId = computed<string | null>(() => (auth?.currentUser?.uid as string) || null)
 const { chat, vision, speechToText, textToSpeech, imageGeneration, models } = usePromptApi()
 const { streamOnce } = usePromptStream()
-const { saveText, saveVision, saveTranscription, saveTTS, saveImageGen } = useHistorySave()
+const { saveText, saveVision, saveTranscription, saveTTS, saveImageGen } = usePromptSave()
 
 function parseContext(text: string): any | null {
 	if (!text || !text.trim()) return null
