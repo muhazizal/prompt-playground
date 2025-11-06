@@ -15,6 +15,13 @@ const cards = [
 		icon: 'i-heroicons-document-text',
 		action: 'Open Notes',
 	},
+	{
+		title: 'Mini Agent',
+		description: 'Run the agent with weather + embeddings retrieval and see steps.',
+		to: '/agent',
+		icon: 'i-heroicons-sparkles',
+		action: 'Open Agent',
+	},
 ]
 </script>
 
@@ -42,35 +49,5 @@ const cards = [
 				</div>
 			</UCard>
 		</div>
-
-		<UCard class="mt-10">
-			<div class="grid md:grid-cols-3 gap-6">
-				<div>
-					<strong>Features</strong>
-					<ul class="text-sm text-gray-700 mt-2 space-y-1">
-						<li>• Compare prompt outputs and temperatures.</li>
-						<li>• Stream results for real-time feedback.</li>
-						<li>• Save and paginate history in Firestore.</li>
-					</ul>
-				</div>
-				<div>
-					<strong>Pages</strong>
-					<ul class="text-sm text-gray-700 mt-2 space-y-1">
-						<li>
-							<ULink to="/prompt/history" class="text-primary-600">Prompt History</ULink>
-						</li>
-						<li>
-							<ULink to="/notes/history" class="text-primary-600">Notes History</ULink>
-						</li>
-					</ul>
-				</div>
-				<div>
-					<strong>Getting Started</strong>
-					<p class="text-sm text-gray-700 mt-2">
-						Head to the playground and try a prompt. Visit history pages to review saved outputs.
-					</p>
-				</div>
-			</div>
-		</UCard>
 	</UContainer>
 </template>

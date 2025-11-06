@@ -11,3 +11,18 @@ export const temperatureOptions = [
 	{ label: '0.90', value: 0.9 },
 	{ label: '1.00', value: 1 },
 ]
+
+// modelOptions are the available models options for a prompt run.
+export const modelOptions = [{ label: 'gpt-4o-mini', value: 'gpt-4o-mini' }]
+
+// docsOptions are the available documents options for a prompt run.
+// Each option is a week of the course.
+export const docsOptions = [
+	{ label: 'Phase 1 Week 1', value: 'phase-1-week-1' },
+	{ label: 'Phase 1 Week 2', value: 'phase-1-week-2' },
+	{ label: 'Phase 1 Week 3', value: 'phase-1-week-3' },
+	{ label: 'Phase 2 Week 1', value: 'phase-2-week-1' },
+	{ label: 'Phase 2 Week 2', value: 'phase-2-week-2' },
+	{ label: 'Phase 2 Week 3', value: 'phase-2-week-3' },
+	{ label: 'Phase 2 Week 4', value: 'phase-2-week-4' },
+]

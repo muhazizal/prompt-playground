@@ -9,7 +9,7 @@ import {
 	trimMessagesToTokenBudget,
 	serializeContextToSystem,
 } from './memory.mjs'
-import { semanticSearchNotes } from './notes-core.mjs'
+import { semanticSearchNotes, listNoteFiles, readNote } from './notes-core.mjs'
 
 /**
  * Weather tool using WeatherAPI.com
@@ -21,9 +21,13 @@ async function weatherTool(query) {
 		return { ok: false, summary: 'WeatherAPI key missing', source: null, data: null }
 	}
 	try {
+		if (!query || !String(query).trim()) {
+			// Skip weather when no explicit query provided
+			return { ok: false, summary: 'Weather query missing', source: null, data: null }
+		}
 		const url = `http://api.weatherapi.com/v1/current.json?key=${encodeURIComponent(
 			key
-		)}&q=${encodeURIComponent(query || 'auto:ip')}`
+		)}&q=${encodeURIComponent(query)}`
 		const res = await fetch(url)
 		if (!res.ok) {
 			const text = await res.text()
@@ -70,6 +74,63 @@ async function docsTool(client, query, { topK = 3 } = {}) {
 }
 
 /**
+ * Docs listing tool: enumerate available notes and return names.
+ */
+function docsListTool() {
+	try {
+		const files = listNoteFiles()
+		const names = files.map((f) => f.name)
+		const summary = `${names.length} notes: ${names.join(', ')}`
+		const results = names.map((n) => ({ file: n, score: 1.0, snippet: '' }))
+		return { ok: true, summary, sources: names, results }
+	} catch (err) {
+		return {
+			ok: false,
+			summary: `Docs list error: ${err?.message || String(err)}`,
+			sources: [],
+			results: [],
+		}
+	}
+}
+
+/**
+ * Exact note match by filename or partial name.
+ */
+function docsExactTool(query) {
+	try {
+		const q = String(query || '')
+			.trim()
+			.toLowerCase()
+			.replace(/\.md$/i, '')
+		const files = listNoteFiles()
+		const match = files.find((f) => {
+			const base = f.name.toLowerCase().replace(/\.md$/i, '')
+			return base === q || base.includes(q)
+		})
+		if (!match)
+			return { ok: false, summary: `No exact note match for "${query}"`, sources: [], results: [] }
+		const text = readNote(match.path)
+		const snippet = String(text || '')
+			.slice(0, 300)
+			.replace(/\n/g, ' ')
+			.trim()
+		return {
+			ok: true,
+			summary: `Exact match: ${match.name}`,
+			sources: [match.name],
+			results: [{ file: match.name, score: 1.0, snippet }],
+		}
+	} catch (err) {
+		return {
+			ok: false,
+			summary: `Docs exact error: ${err?.message || String(err)}`,
+			sources: [],
+			results: [],
+		}
+	}
+}
+
+/**
  * Build system instructions for the mini agent.
  */
 function buildSystemInstructions() {
@@ -78,7 +139,73 @@ Schema: {"intent": string, "answer": string, "sources": string[]}
 - intent: one of ["chat", "answer", "tool-summary"]
 - answer: final short answer for user
 - sources: filenames or urls you relied on
+Rules:
+- Prioritize answering the user's prompt directly.
+- Use tool outputs only if relevant to the prompt.
+- If no tools are used, return sources: [].
 No markdown, no prose outside JSON.`
+}
+
+/**
+ * Decide which tools to run based on the prompt only.
+ */
+function planTools(prompt) {
+	const txt = String(prompt || '').toLowerCase()
+	const wantsWeather = /\b(weather|temperature|forecast|rain|sunny|wind)\b/.test(txt)
+	const wantsDocs =
+		/\b(note|notes|week|phase|doc|docs|project|agent|embedding|prompt|summarize|summary|title|titles|list|count|how\s+many)\b/.test(
+			txt
+		)
+	return { wantsWeather, wantsDocs }
+}
+
+/**
+ * Extract a plausible weather location from prompt.
+ * Looks for patterns like "weather in <location>" or "forecast for <location>".
+ */
+function extractWeatherLocation(prompt) {
+	const text = String(prompt || '')
+	const clean = (s) =>
+		String(s || '')
+			.replace(/\s+/g, ' ')
+			.trim()
+	// Capture location allowing trailing connectors; we will trim later
+	let m = text.match(/\b(?:weather|forecast)\s+(?:in|for|at)\s+([A-Za-z][A-Za-z\s\-']{1,})/i)
+	let loc = m && m[1] ? m[1] : null
+	if (!loc) {
+		m = text.match(/\b(?:in|for|at)\s+([A-Za-z][A-Za-z\s\-']{1,})/i)
+		loc = m && m[1] ? m[1] : null
+	}
+	if (!loc) return null
+	// Trim at connectors or punctuation (handles "and ...")
+	loc = loc.split(/[,.;!?]|\band\b|\bthen\b|\bbut\b|\bplease\b/i)[0]
+	return clean(loc)
+}
+
+/** Extract a focused docs query segment from the prompt */
+function extractDocsQuery(prompt) {
+	const text = String(prompt || '')
+	const parts = text
+		.split(/[,.;!?]|\band\b|\bthen\b|\bbut\b/i)
+		.map((s) => s.trim())
+		.filter(Boolean)
+	const idx = parts.findIndex((p) =>
+		/\b(note|notes|week|phase|doc|docs|project|agent|embedding|prompt|summarize|summary)\b/i.test(p)
+	)
+	if (idx >= 0) return parts[idx]
+	const m = text.match(/\b(?:summarize|summary)\s+([^.!?]+)/i)
+	if (m && m[1]) return m[1].trim()
+	return text
+}
+
+/** Extract a probable doc filename like "phase-1-week-2" (optional .md) */
+function extractDocFilename(prompt) {
+	const txt = String(prompt || '').toLowerCase()
+	const m = txt.match(/\bphase\s*-?\s*(\d+)\s*-?\s*week\s*-?\s*(\d+)\b/)
+	if (m) return `phase-${m[1]}-week-${m[2]}`
+	const m2 = txt.match(/\b([a-z0-9\-]+)\.md\b/)
+	if (m2) return m2[1]
+	return null
 }
 
 /**
@@ -90,8 +217,8 @@ function estimateCostUSD(usage, model = 'gpt-4o-mini') {
 		'gpt-4o-mini': { inputPerM: 0.15, outputPerM: 0.6 },
 	}
 	const p = PRICES[model] || PRICES['gpt-4o-mini']
-	const pi = (usage.prompt_tokens || 0) / 1_000_000
-	const po = (usage.completion_tokens || 0) / 1_000_000
+	const pi = ((usage.prompt_tokens ?? usage.promptTokens) || 0) / 1_000_000
+	const po = ((usage.completion_tokens ?? usage.completionTokens) || 0) / 1_000_000
 	return Number((pi * p.inputPerM + po * p.outputPerM).toFixed(6))
 }
 
@@ -117,19 +244,17 @@ function validateResultShape(obj) {
 
 /**
  * Run the mini agent with chat + tools + memory.
- * opts: { prompt, sessionId, useMemory, model, temperature, maxTokens, weatherQuery, docsQuery }
+ * opts: { prompt, sessionId, useMemory, model, temperature, maxTokens }
  * ctx: { client, debug }
  */
 export async function runAgent(
 	{
 		prompt,
-		sessionId = 'default',
+		sessionId = 'mini-agent',
 		useMemory = true,
 		model = 'gpt-4o-mini',
 		temperature = 0.2,
 		maxTokens = 400,
-		weatherQuery,
-		docsQuery,
 	} = {},
 	{ client: clientOverride, debug = false } = {}
 ) {
@@ -139,8 +264,36 @@ export async function runAgent(
 	// Tools
 	const steps = ['init']
 	const toolsContext = {}
-	if (weatherQuery) toolsContext.weather = await weatherTool(weatherQuery)
-	toolsContext.docs = await docsTool(client, docsQuery || prompt, { topK: 3 })
+	const { wantsWeather, wantsDocs } = planTools(prompt)
+
+	// Run tools
+	if (wantsWeather) {
+		const loc = extractWeatherLocation(prompt)
+		if (loc) {
+			toolsContext.weather = await weatherTool(loc)
+			steps.push(`tool:weather:${loc}`)
+		} else {
+			steps.push('tool:weather:skipped:no_location')
+		}
+	}
+	if (wantsDocs) {
+		const dq = extractDocsQuery(prompt)
+		const wantsList =
+			/\b(list|count|how\s+many)\b/i.test(prompt) &&
+			/\b(note|notes|doc|docs|title|titles)\b/i.test(prompt)
+		const exactName = extractDocFilename(prompt)
+		if (wantsList) {
+			toolsContext.docsList = docsListTool()
+			steps.push('tool:docs:list')
+		}
+		if (exactName) {
+			toolsContext.docsExact = docsExactTool(exactName)
+			steps.push(`tool:docs:exact:${exactName}`)
+		} else {
+			toolsContext.docs = await docsTool(client, dq, { topK: 3 })
+			steps.push(`tool:docs:${dq.slice(0, 32)}`)
+		}
+	}
 	steps.push('tools:done')
 
 	// Memory
@@ -173,16 +326,71 @@ export async function runAgent(
 	await appendMessage(sessionId, { role: 'user', content: prompt })
 	await appendMessage(sessionId, { role: 'assistant', content: text })
 
+	// Assemble structured sources
+	const docSources = Array.isArray(toolsContext?.docs?.results)
+		? toolsContext.docs.results.map((r) => ({
+				type: 'doc',
+				file: r.file,
+				snippet: r.snippet,
+				score: r.score,
+		  }))
+		: []
+	const docExactSources = Array.isArray(toolsContext?.docsExact?.results)
+		? toolsContext.docsExact.results.map((r) => ({
+				type: 'doc',
+				file: r.file,
+				snippet: r.snippet,
+				score: r.score,
+		  }))
+		: []
+	const docListSources = Array.isArray(toolsContext?.docsList?.results)
+		? toolsContext.docsList.results.map((r) => ({ type: 'doc', file: r.file }))
+		: []
+	const weatherSrc = toolsContext?.weather?.ok
+		? [
+				{
+					type: 'weather',
+					title: toolsContext.weather?.data?.location?.name || null,
+					url: toolsContext.weather?.source || null,
+					snippet: toolsContext.weather?.summary,
+					meta: {
+						temp_c: toolsContext.weather?.data?.current?.temp_c,
+						condition: toolsContext.weather?.data?.current?.condition?.text,
+					},
+				},
+		  ]
+		: []
+	const normalizedStrings = Array.isArray(normalized.sources)
+		? normalized.sources.map((s) => (typeof s === 'string' ? { type: 'doc', file: s } : s))
+		: []
+	const memorySrc = useMemory && memorySummary ? [{ type: 'memory', snippet: memorySummary }] : []
+
+	const combinedSources = [
+		...weatherSrc,
+		...docListSources,
+		...docExactSources,
+		...docSources,
+		...normalizedStrings,
+		...memorySrc,
+	]
+
+	function normalizeUsage(u) {
+		if (!u) return null
+		return {
+			promptTokens: u.promptTokens ?? u.prompt_tokens ?? null,
+			completionTokens: u.completionTokens ?? u.completion_tokens ?? null,
+			totalTokens: u.totalTokens ?? u.total_tokens ?? null,
+		}
+	}
+
 	const result = {
 		...normalized,
 		model,
 		temperature,
 		maxTokens,
-		usage: completion?.usage || null,
+		usage: normalizeUsage(completion?.usage || null),
 		durationMs,
-		sources: Array.from(
-			new Set([...(normalized.sources || []), ...(toolsContext?.docs?.sources || [])])
-		),
+		sources: combinedSources,
 		costUsd: estimateCostUSD(completion?.usage || null, model),
 		steps,
 	}

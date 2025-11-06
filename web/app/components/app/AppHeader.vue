@@ -15,6 +15,11 @@ const items = computed<NavigationMenuItem[]>(() => [
 		to: '/notes',
 		active: route.path.includes('/notes'),
 	},
+	{
+		label: 'Mini Agent',
+		to: '/agent',
+		active: route.path.includes('/agent'),
+	},
 ])
 </script>
 

@@ -15,6 +15,14 @@
     {
       "role": "assistant",
       "content": "As a Senior QA Engineer, understanding the concepts of User Stories, Expected Results, Story Points, and SP Steps is crucial for effectively participating in the software development lifecycle, particularly in Agile methodologies. Let’s break down each concept and provide examples and mind mapping ideas.\n\n### 1. User Story\n\n**Definition**: A User Story is a brief description of a feature from the perspective of the end-user. It typically follows the format: \n- **As a [type of user], I want [an action] so that [a benefit/a value].**\n\n**Purpose**: User Stories help teams understand the needs of users and prioritize features based on user value.\n\n**Example**:\n- **User Story**: As a **registered user**, I want to **reset my password** so that I can **access my account if I forget my password**.\n\n### 2. Expected Result\n\n**Definition**: The Expected Result is the anticipated outcome of a particular action or feature. It defines what success looks like when the User Story is implemented.\n\n**Purpose**: It helps QA engineers verify that the functionality works as intended by providing a clear benchmark for testing.\n\n**Example**:\n- **Expected Result**: When the user clicks on the **“Reset Password”** link, they should receive an email with a link to reset their password, and the message **“A password reset link has been sent to your registered email address.”** should be displayed.\n\n### 3. Story Point\n\n**Definition**: Story Points are a unit of measure used in Agile development to estimate the effort required to implement a User Story. They are usually based on complexity, time, and risk.\n\n**Purpose**: Story Points help teams prioritize and plan their work by estimating how much work can be completed in a given iteration.\n\n**Example**:\n- **Story Point**: The User Story for resetting the password might be assigned **3 Story Points**, indicating it is a medium complexity task.\n\n### 4. SP Steps of Document\n\n**Definition**: SP Steps (or Steps to Reproduce) are the specific actions that need to be taken to test the User Story. These steps guide the QA team in executing test cases.\n\n**Purpose**: They ensure that testing is consistent and thorough by providing a clear sequence of actions.\n\n**Example**:\n- **SP Steps**:\n  1. Navigate to the login page.\n  2. Click on the **“Forgot Password?”** link.\n  3. Enter the registered email address.\n  4. Click on the **“Submit”** button.\n  5. Check the inbox of the registered email address for the reset link.\n  6. Click on the reset link and follow the instructions to set a new password.\n\n### Mind Mapping\n\nTo create a mind map for User Stories, Expected Results, Story Points, and SP Steps, you can visualize it as follows:\n\n```\n                             User Story\n                                 |\n         +-----------------------+-----------------------+\n         |                       |                       |\n   Expected Result         Story Points             SP Steps\n         |                       |                       |\n         |                       |                       |\n   - Description          - Complexity Estimate      1. Action 1\n   - Success Criteria     - Risk Assessment          2. Action 2\n                          - Time Estimate            3. Action 3\n```\n\n### Example Mind Map Breakdown\n\n1. **User Story**: \n   - As a registered user, I want to reset my password so that I can access my account if I forget my password.\n   \n2. **Expected Result**:\n   - When the user clicks on the “Reset Password” link, they should receive an email with a link to reset their password, and the message “A password reset link has been sent to your registered email address.” should be displayed.\n\n3. **Story Points**:\n   - Assigned: 3 Story Points\n   - Complexity: Medium\n   - Risk: Low to Medium\n\n4. **SP Steps**:\n   1. Navigate to the login page.\n   2. Click on the “Forgot Password?” link.\n   3. Enter the registered email address.\n   4. Click on the “Submit” button.\n   5. Check the inbox for the reset link.\n   6. Click on the reset link and set a new password.\n\nThis structured approach helps ensure that all aspects of the User Story are well-defined and understood, facilitating better communication within the development and QA teams."
+    },
+    {
+      "role": "user",
+      "content": "weather today"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm unable to provide real-time information, including current weather updates, as my knowledge only extends up to October 2023 and I don't have access to the internet for live data. To get the most accurate and up-to-date weather information, I recommend checking a reliable weather website or using a weather app on your device."
     }
   ],
   "H7sniPhIgmRiIydSkZjAV2QQplB2:notes": [
@@ -93,6 +101,182 @@
     {
       "role": "assistant",
       "content": "I couldn't retrieve the weather information. However, regarding what we learned last week, please refer to the notes from phase-2-week-4.\n\nHere’s a structured JSON response:\n\n```json\n{\n  \"intent\": \"docs\",\n  \"answer\": \"Refer to the notes from phase-2-week-4 for the learnings.\",\n  \"sources\": \"phase-2-week-4.md\",\n  \"usage\": \"N/A\",\n  \"costUsd\": \"N/A\",\n  \"steps\": \"N/A\"\n}\n```"
+    }
+  ],
+  "demo-session": [
+    {
+      "role": "user",
+      "content": "What is the weather and what did we learn last week?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in What Cheer is clear with a temperature of 1.6°C. Last week, we learned about AI product thinking, prompting fundamentals, and API integration.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=What%20is%20the%20weather%20and%20what%20did%20we%20learn%20last%20week%3F\",\"phase-2-week-4.md\",\"phase-1-week-1.md\",\"phase-2-week-1.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "What is the weather and what did we learn last week?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in What Cheer is clear with a temperature of 1.6°C. Last week, we learned about AI product thinking, prompting fundamentals, and API integration.\",\"sources\":[\"phase-1-week-1.md\",\"phase-2-week-2.md\",\"phase-2-week-4.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "What is the weather and what did we learn last week?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in What Cheer is clear with a temperature of 1.6°C. Last week, we learned about AI product thinking, prompting fundamentals, and API integration.\",\"sources\":[\"phase-1-week-1.md\",\"phase-2-week-2.md\",\"phase-2-week-4.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "What is the weather and what did we learn last week?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in What Cheer is clear with a temperature of 1.6°C. Last week, we learned about AI product thinking, prompting fundamentals, and API integration.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=What%20is%20the%20weather%20and%20what%20did%20we%20learn%20last%20week%3F\",\"phase-2-week-4.md\",\"phase-1-week-1.md\",\"phase-2-week-1.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "What is the weather and what did we learn last week?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in What Cheer is clear with a temperature of 1.6°C. Last week, we learned about AI product thinking, prompting fundamentals, and API integration.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=What%20is%20the%20weather%20and%20what%20did%20we%20learn%20last%20week%3F\",\"phase-2-week-4.md\",\"phase-1-week-1.md\",\"phase-2-week-1.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "what is the weather in NY and what did we learn yesterday?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in New York is currently not available. Yesterday, we learned about AI product thinking, prompting fundamentals, and API integration.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=NY\",\"phase-2-week-4.md\",\"phase-1-week-1.md\",\"phase-2-week-1.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "What is the weather and what did we learn last week?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in What Cheer is clear with a temperature of 1.6°C. Last week, we learned about AI product thinking, prompting fundamentals, and API integration.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=What%20is%20the%20weather%20and%20what%20did%20we%20learn%20last%20week%3F\",\"phase-2-week-4.md\",\"phase-1-week-1.md\",\"phase-2-week-1.md\"]}"
+    }
+  ],
+  "mini-agent": [
+    {
+      "role": "user",
+      "content": "What’s the weather in London and Summarize phase-1 week-2 notes."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"I cannot provide the current weather in London. Phase 1 Week 2 notes are not available in the provided documents.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "What’s the weather in London and Summarize phase-1-week-2 notes."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"I cannot provide the current weather in London. Additionally, Phase 1 Week 2 notes are not available in the provided documents.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "What’s the weather in London and Summarize phase-1 week-2 notes."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"chat\",\"answer\":\"Weather for London: Partly cloudy, temp 14°C, feels 13.1°C, humidity 94%, wind 12.2 kph. Phase 1 Week 2 notes are not available in the provided documents.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=London\"]}"
+    },
+    {
+      "role": "user",
+      "content": "What’s the weather in Solo and Summarize phase 1 week 1 note."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Weather in Solo: Sunny, temp 28°C, feels like 29.1°C, humidity 54%, wind 12.6 kph. Phase 1 Week 1 notes: This week focuses on effective LLM prompting, covering prompt anatomy, key generation parameters, tokenization, and repeatable prompt patterns for reliability.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=Solo\",\"phase-1-week-1.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "What’s the weather in New York and Summarize phase 2 week 2 note."
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"intent\": \"answer\",\n  \"answer\": \"The weather in New York is clear with a temperature of 10.1°C, feels like 6.5°C, humidity at 46%, and wind speed of 33.5 kph. Phase 2 Week 2 focuses on hardening the API with consistent authentication, request validation, rate limiting, structured logging, and usage metrics for a secure web app surface.\",\n  \"sources\": [\n    \"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=New%20York\",\n    \"phase-2-week-2.md\"\n  ]\n}"
+    },
+    {
+      "role": "user",
+      "content": "do you remember what i ask you before?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"chat\",\"answer\":\"I don't have memory of past interactions.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "explain what semantic search in detail."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Semantic search is an information retrieval technique that seeks to improve search accuracy by understanding the intent and contextual meaning of search queries. It goes beyond traditional keyword matching by considering the relationships between words, concepts, and the overall context. Semantic search utilizes natural language processing (NLP), machine learning, and knowledge graphs to interpret user queries more like human language, allowing for more relevant results. It can handle synonyms, variations in phrasing, and user intent, thus providing answers that are contextually appropriate rather than just matching keywords.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "weather in hongkong"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Hong Kong is light rain with a temperature of 28.3°C, feels like 32.3°C, humidity at 62%, and wind speed of 32.8 kph.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=hongkong\"]}"
+    }
+  ],
+  "try-me": [
+    {
+      "role": "user",
+      "content": "weather in Tokyo and what notes do you have?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Tokyo is clear with a temperature of 16.2°C. Notes include context management, prompt orchestration, and AI product thinking from recent phases of study.\",\"sources\":[\"phase-2-week-3.md\",\"phase-1-week-3.md\",\"phase-2-week-4.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "why you always return 3 sources instead of all?"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"chat\",\"answer\":\"I return only the most relevant sources to your query for conciseness and clarity.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "list all notes title that you have."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"1. Context Management & Memory\\n2. Prompt Orchestration & Evaluation\\n3. AI Product Thinking\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "how much notes in you storage? list all of title."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"3 notes stored: 1. Week 3 – Context Management & Memory 2. Phase 2 – Week 4: AI Product Thinking 3. Phase 1 – Week 3: Prompt Orchestration & Evaluation\",\"sources\":[]}}"
+    }
+  ],
+  "16.06": [
+    {
+      "role": "user",
+      "content": "What’s the weather in London and Summarize phase 1 week 2 note."
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"intent\": \"answer\",\n  \"answer\": \"Weather in London: Partly cloudy, 14.2°C. Phase 1 Week 2 focuses on embedding text for semantic search, building a vector index, and using top-k retrieval for model responses.\",\n  \"sources\": [\n    \"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=London\",\n    \"phase-1-week-2.md\"\n  ]\n}"
+    },
+    {
+      "role": "user",
+      "content": "List all of notes you have."
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"intent\": \"answer\",\n  \"answer\": \"The notes available are: phase-1-week-1.md, phase-1-week-2.md, phase-1-week-3.md, phase-2-week-1.md, phase-2-week-2.md, phase-2-week-3.md, phase-2-week-4.md.\",\n  \"sources\": []\n}"
     }
   ]
 }
