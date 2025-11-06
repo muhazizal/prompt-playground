@@ -22,13 +22,14 @@ import { getModelContextWindow, summarizeMessages } from '../core/prompt-core.mj
 
 // Lightweight memory for prior summaries and context serialization
 import {
-  getRecentMessages,
-  appendMessage,
-  clearSession,
-  countMessagesTokens,
-  splitMessagesByBudget,
-  trimMessagesToTokenBudget,
-  serializeContextToSystem,
+	getRecentMessages,
+	appendMessage,
+	clearSession,
+	countMessagesTokens,
+	splitMessagesByBudget,
+	trimMessagesToTokenBudget,
+	serializeContextToSystem,
+	buildSessionKey,
 } from '../core/memory.mjs'
 
 import { requireApiKey } from '../middleware/auth.mjs'
@@ -95,9 +96,7 @@ export function registerNotesRoutes(app) {
 				} = req.body || {}
 
 				// Per-user session key for notes memory (prior summaries only)
-				const userId = req.headers['x-user-id'] || null
-				const sessionIdRaw = sid || req.headers['x-session-id'] || req.ip || 'notes'
-				const sessionId = userId ? `${userId}:${sessionIdRaw}` : sessionIdRaw
+				const sessionId = buildSessionKey(req, { sid, defaultScope: 'notes' })
 				if (useMemory && reset) await clearSession(sessionId)
 				const CONCURRENCY = Number(process.env.NOTES_CONCURRENCY || 2)
 
@@ -121,8 +120,8 @@ export function registerNotesRoutes(app) {
 								role: 'assistant',
 								content: `Summary: ${cached.summary}. Tags: ${(Array.isArray(cached.tags)
 									? cached.tags.slice(0, 7)
-									: [])
-									.join(', ')}`,
+									: []
+								).join(', ')}`,
 							})
 						}
 						const embedTags = await withRetries(() => rankTags(client, text), {
@@ -147,9 +146,7 @@ export function registerNotesRoutes(app) {
 					}
 
 					// Build base messages: system + optional context + lightweight memory
-					let baseMessages = [
-						{ role: 'system', content: 'You summarize and tag notes concisely.' },
-					]
+					let baseMessages = [{ role: 'system', content: 'You summarize and tag notes concisely.' }]
 					if (context && typeof context === 'object') {
 						baseMessages.push(serializeContextToSystem(context))
 					}
@@ -192,8 +189,7 @@ export function registerNotesRoutes(app) {
 					let noteText = text
 					let userMsg = {
 						role: 'user',
-						content:
-							`Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
+						content: `Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
 					}
 
 					// If messages exceed available window, compress the note content
@@ -208,8 +204,7 @@ export function registerNotesRoutes(app) {
 							noteText = `Compressed note:\n${condensed}`
 							userMsg = {
 								role: 'user',
-								content:
-									`Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
+								content: `Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
 							}
 							total = countMessagesTokens([...baseMessages, userMsg])
 						} catch {}
@@ -264,7 +259,14 @@ export function registerNotesRoutes(app) {
 						setCachedSummary(text, model, summary, tags, completion?.usage || null)
 					} catch {}
 
-					return { file: path.basename(p), summary, tags, usage: completion?.usage || null, evaluation, model }
+					return {
+						file: path.basename(p),
+						summary,
+						tags,
+						usage: completion?.usage || null,
+						evaluation,
+						model,
+					}
 				})
 
 				res.json({ results })
@@ -395,16 +397,12 @@ export function registerNotesRoutes(app) {
 				}
 
 				// Build base messages (system + optional context + trimmed memory)
-				let baseMessages = [
-					{ role: 'system', content: 'You summarize and tag notes concisely.' },
-				]
+				let baseMessages = [{ role: 'system', content: 'You summarize and tag notes concisely.' }]
 				if (context && typeof context === 'object') {
 					baseMessages.push(serializeContextToSystem(context))
 				}
 
-				const userId = req.headers['x-user-id'] || null
-				const sessionIdRaw = sid || req.headers['x-session-id'] || req.ip || 'notes'
-				const sessionId = userId ? `${userId}:${sessionIdRaw}` : sessionIdRaw
+				const sessionId = buildSessionKey(req, { sid, defaultScope: 'notes' })
 				if (useMemory && reset) await clearSession(sessionId)
 
 				const windowTokens = getModelContextWindow(model)
@@ -444,8 +442,7 @@ export function registerNotesRoutes(app) {
 				let noteText = text
 				let userMsg = {
 					role: 'user',
-					content:
-						`Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
+					content: `Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
 				}
 				const available = Math.max(500, windowTokens - Number(maxTokens || 0) - 500)
 				let total = countMessagesTokens([...baseMessages, userMsg])
@@ -458,8 +455,7 @@ export function registerNotesRoutes(app) {
 						noteText = `Compressed note:\n${condensed}`
 						userMsg = {
 							role: 'user',
-							content:
-								`Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
+							content: `Summarize the following note in 3-5 sentences. Then propose 5 short tags.\nReturn JSON with {"summary": string, "tags": string[]}.\nNote:\n\n${noteText}`,
 						}
 						total = countMessagesTokens([...baseMessages, userMsg])
 					} catch {}

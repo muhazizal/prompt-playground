@@ -201,3 +201,19 @@ export function serializeContextToSystem(context) {
 		return { role: 'system', content: 'Context unavailable' }
 	}
 }
+
+/**
+ * Build a normalized per-request session key.
+ * - Prepends `x-user-id` if present.
+ * - Avoids double-prepending when `sessionIdRaw` already starts with `userId:`.
+ */
+export function buildSessionKey(req, { sid, defaultScope = 'default' } = {}) {
+  const userId = req.headers['x-user-id'] || null
+  const rawHeader = req.headers['x-session-id']
+  const fallback = req.ip || defaultScope
+  const sessionIdRaw = String(sid || rawHeader || fallback || defaultScope)
+  const alreadyPrefixed = userId && sessionIdRaw.startsWith(`${userId}:`)
+  return userId
+    ? (alreadyPrefixed ? sessionIdRaw : `${userId}:${sessionIdRaw}`)
+    : sessionIdRaw
+}

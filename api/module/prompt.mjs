@@ -23,6 +23,7 @@ import {
 	splitMessagesByBudget,
 	countMessagesTokens,
 	serializeContextToSystem,
+	buildSessionKey,
 } from '../core/memory.mjs'
 
 /**
@@ -34,7 +35,7 @@ export function registerPromptRoutes(app) {
 		const models = await listModels()
 		res.json({ models })
 	})
-	
+
 	// Chat completion with temperature control
 	app.post(
 		'/prompt/chat',
@@ -85,9 +86,7 @@ export function registerPromptRoutes(app) {
 					summaryMaxTokens = 200,
 				} = req.body || {}
 
-				const userId = req.headers['x-user-id'] || null
-				const sessionIdRaw = sid || req.headers['x-session-id'] || req.ip || 'default'
-				const sessionId = userId ? `${userId}:${sessionIdRaw}` : sessionIdRaw
+				const sessionId = buildSessionKey(req, { sid, defaultScope: 'default' })
 				if (useMemory && reset) clearSession(sessionId)
 
 				// Build messages (system + trimmed memory + user)
@@ -195,9 +194,7 @@ export function registerPromptRoutes(app) {
 				const useMemory =
 					String(req.query.useMemory || '') === 'true' || req.query.useMemory === true
 				const sid = req.query.sessionId || req.headers['x-session-id']
-				const userId = req.headers['x-user-id'] || null
-				const sessionIdRaw = sid || req.ip || 'default'
-				const sessionId = userId ? `${userId}:${sessionIdRaw}` : sessionIdRaw
+				const sessionId = buildSessionKey(req, { sid, defaultScope: 'default' })
 				const reset = String(req.query.reset || '') === 'true' || req.query.reset === true
 				const memorySize = req.query.memorySize !== undefined ? Number(req.query.memorySize) : 30
 				const contextBudgetTokens =
