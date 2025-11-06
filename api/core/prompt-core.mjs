@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { getClient as getNotesClient } from './notes-core.mjs'
+import { getClient as getNotesClient, CACHE_DIR } from './notes-core.mjs'
 
 // Task-based default models
 export const TASK_MODELS = {
@@ -204,7 +204,7 @@ export async function speechToTextTranscribe(
 
 	const base64 = audioBase64.replace(/^data:[^;]+;base64,/, '')
 	const buf = Buffer.from(base64, 'base64')
-	const tmpDir = path.join(process.cwd(), 'cache')
+	const tmpDir = CACHE_DIR
 
 	if (!fs.existsSync(tmpDir)) {
 		fs.mkdirSync(tmpDir, { recursive: true })

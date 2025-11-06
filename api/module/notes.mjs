@@ -34,9 +34,14 @@ import {
 import { requireApiKey } from '../middleware/auth.mjs'
 import { validateBody, validateQuery } from '../middleware/validate.mjs'
 
-import { sendError } from '../utils/http.mjs'
+import { sendError, safeParseJson, toBool, toNum } from '../utils/http.mjs'
 
-// Register API routes for notes processing
+/**
+ * Register API routes for notes processing.
+ * Provides: /notes/list, /notes/process, /notes/summarize-stream, and tag management endpoints.
+ *
+ * @param {import('express').Express} app - Express application instance
+ */
 export function registerNotesRoutes(app) {
 	// List available note files
 	app.get('/notes/list', (_req, res) => {
@@ -82,17 +87,28 @@ export function registerNotesRoutes(app) {
 				const client = getClient(req.aiApiKey)
 				const {
 					paths,
-					model = DEFAULT_MODEL,
-					maxTokens = 300,
-					context,
-					contextBudgetTokens,
-					useMemory = false,
+					model: modelRaw,
+					maxTokens: maxTokensRaw,
+					context: contextRaw,
+					contextBudgetTokens: contextBudgetTokensRaw,
+					useMemory: useMemoryRaw,
 					sessionId: sid,
-					reset = false,
-					memorySize = 30,
-					summarizeOverflow = true,
-					summaryMaxTokens = 200,
+					reset: resetRaw,
+					memorySize: memorySizeRaw,
+					summarizeOverflow: summarizeOverflowRaw,
+					summaryMaxTokens: summaryMaxTokensRaw,
 				} = req.body || {}
+
+				// Normalize controls (using shared helpers)
+				const model = String(modelRaw || DEFAULT_MODEL)
+				const maxTokens = toNum(maxTokensRaw, 300)
+				const context = safeParseJson(contextRaw)
+				const contextBudgetTokens = toNum(contextBudgetTokensRaw, undefined)
+				const useMemory = toBool(useMemoryRaw)
+				const reset = toBool(resetRaw)
+				const memorySize = toNum(memorySizeRaw, 30)
+				const summarizeOverflow = toBool(summarizeOverflowRaw)
+				const summaryMaxTokens = toNum(summaryMaxTokensRaw, 200)
 
 				// Per-user session key for notes memory (prior summaries only)
 				const sessionId = buildSessionKey(req, { sid, defaultScope: 'notes' })
@@ -336,28 +352,16 @@ export function registerNotesRoutes(app) {
 				}
 				if (!text) return sendError(res, 400, 'INVALID_INPUT', 'No content to summarize')
 
-				// Normalize controls
+				// Normalize controls (using shared helpers)
 				const model = String(modelRaw || DEFAULT_MODEL)
-				const maxTokens = maxTokensRaw !== undefined ? Number(maxTokensRaw) : 300
-				const context = (() => {
-					if (typeof contextRaw === 'string') {
-						try {
-							return JSON.parse(contextRaw)
-						} catch {
-							return null
-						}
-					}
-					return typeof contextRaw === 'object' ? contextRaw : null
-				})()
-				const contextBudgetTokens =
-					contextBudgetTokensRaw !== undefined ? Number(contextBudgetTokensRaw) : undefined
-				const useMemory = String(useMemoryRaw || '') === 'true' || useMemoryRaw === true
-				const reset = String(resetRaw || '') === 'true' || resetRaw === true
-				const memorySize = memorySizeRaw !== undefined ? Number(memorySizeRaw) : 30
-				const summarizeOverflow =
-					String(summarizeOverflowRaw || '') === 'true' || summarizeOverflowRaw === true
-				const summaryMaxTokens =
-					summaryMaxTokensRaw !== undefined ? Number(summaryMaxTokensRaw) : 200
+				const maxTokens = toNum(maxTokensRaw, 300)
+				const context = safeParseJson(contextRaw)
+				const contextBudgetTokens = toNum(contextBudgetTokensRaw, undefined)
+				const useMemory = toBool(useMemoryRaw)
+				const reset = toBool(resetRaw)
+				const memorySize = toNum(memorySizeRaw, 30)
+				const summarizeOverflow = toBool(summarizeOverflowRaw)
+				const summaryMaxTokens = toNum(summaryMaxTokensRaw, 200)
 
 				// SSE (Server-Sent Events): one-way text stream from server to client
 				res.setHeader('Content-Type', 'text/event-stream')

@@ -44,7 +44,17 @@ function ensureDirs() {
 	if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true })
 }
 
-// Load embeddings cache from disk if it exists
+/** Safe JSON.parse with fallback. */
+function safeJsonParse(raw, fallback) {
+	try {
+		const v = JSON.parse(raw)
+		return typeof v === 'undefined' ? fallback : v
+	} catch {
+		return fallback
+	}
+}
+
+/** Load embeddings cache from disk; warms in-memory caches. */
 function loadEmbeddingsCacheFromDisk() {
 	ensureDirs()
 
@@ -53,7 +63,7 @@ function loadEmbeddingsCacheFromDisk() {
 	if (fs.existsSync(EMBED_CACHE_FILE)) {
 		try {
 			const raw = fs.readFileSync(EMBED_CACHE_FILE, 'utf-8')
-			const parsed = JSON.parse(raw)
+			const parsed = safeJsonParse(raw, {})
 
 			// Validate cache format
 			embedDiskCache = {
@@ -73,8 +83,8 @@ function loadEmbeddingsCacheFromDisk() {
 	}
 }
 
-// Save embeddings cache to disk with debounce
 let saveTimer = null
+/** Debounced save of embeddings cache to disk. */
 function scheduleSaveEmbeddingsCache() {
 	if (saveTimer) return
 
@@ -87,7 +97,7 @@ function scheduleSaveEmbeddingsCache() {
 	}, 200)
 }
 
-// Load summaries cache from disk if it exists
+/** Load summaries cache from disk; warms in-memory cache. */
 function loadSummaryCacheFromDisk() {
 	ensureDirs()
 
@@ -96,7 +106,7 @@ function loadSummaryCacheFromDisk() {
 	if (fs.existsSync(SUMMARY_CACHE_FILE)) {
 		try {
 			const raw = fs.readFileSync(SUMMARY_CACHE_FILE, 'utf-8')
-			const parsed = JSON.parse(raw)
+			const parsed = safeJsonParse(raw, {})
 
 			summaryDiskCache = parsed && typeof parsed === 'object' ? parsed : {}
 
@@ -112,8 +122,8 @@ function loadSummaryCacheFromDisk() {
 	}
 }
 
-// Save summaries cache to disk with debounce
 let summarySaveTimer = null
+/** Debounced save of summaries cache to disk. */
 function scheduleSaveSummaryCache() {
 	if (summarySaveTimer) return
 
@@ -126,14 +136,14 @@ function scheduleSaveSummaryCache() {
 	}, 200)
 }
 
-// Create OpenAI client with API key validation
+/** Create OpenAI client with API key validation. */
 export function getClient(apiKey) {
 	if (!apiKey) throw new Error('Missing OPENAI_API_KEY')
 
 	return new OpenAI({ apiKey })
 }
 
-// List note files in notes directory
+/** List note files in notes directory. */
 export function listNoteFiles() {
 	if (!fs.existsSync(NOTES_DIR)) return []
 
@@ -145,7 +155,7 @@ export function listNoteFiles() {
 		.map((f) => ({ name: f, path: path.join(NOTES_DIR, f) }))
 }
 
-// Read note content with validation
+/** Read note content with validation. */
 export function readNote(filePath) {
 	try {
 		if (!filePath.startsWith(NOTES_DIR)) {
@@ -167,7 +177,7 @@ function normalizeKey(str = '') {
 		.replace(/^-+|-+$/g, '')
 }
 
-// Parse phase/week patterns from arbitrary text
+/** Parse phase/week patterns from arbitrary text. */
 export function parsePhaseWeek(text = '') {
 	const s = String(text || '').toLowerCase()
 	let m = s.match(/\bphase\s*([0-9]+)[^a-z0-9]+week\s*([0-9]+)\b/)
@@ -203,7 +213,7 @@ function canonicalSlugFromPW(pw) {
 	return `phase-${phase}-week-${week}`
 }
 
-// Build slug index for note filenames
+/** Build slug index for note filenames. */
 export function buildNoteSlugIndex() {
 	const files = listNoteFiles()
 	return files.map((f) => {
@@ -222,7 +232,7 @@ export function buildNoteSlugIndex() {
 	})
 }
 
-// Find a note by query using slug index and heuristics
+/** Find a note by query using slug index and heuristics. */
 export function findNoteByQuery(query = '') {
 	const idx = buildNoteSlugIndex()
 	const qKey = normalizeKey(query)
@@ -256,7 +266,7 @@ function sha1(str) {
 	return crypto.createHash('sha1').update(str).digest('hex')
 }
 
-// Get cached summary if available for given text and model
+/** Get cached summary if available for given text and model. */
 export function getCachedSummary(text, model = DEFAULT_MODEL) {
 	loadSummaryCacheFromDisk()
 
@@ -268,7 +278,7 @@ export function getCachedSummary(text, model = DEFAULT_MODEL) {
 	return null
 }
 
-// Set cached summary
+/** Set cached summary entry for text+model. */
 export function setCachedSummary(text, model, summary, tags, usage) {
 	loadSummaryCacheFromDisk()
 
@@ -285,7 +295,7 @@ export function setCachedSummary(text, model, summary, tags, usage) {
 	scheduleSaveSummaryCache()
 }
 
-// Get text embedding with cache
+/** Get text embedding with cache (in-memory + disk). */
 export async function getTextEmbedding(client, text) {
 	loadEmbeddingsCacheFromDisk()
 	const key = sha1(text)
@@ -344,14 +354,14 @@ async function getTagEmbedding(client, tag) {
 	return vec
 }
 
-// Load tag candidates from disk or use default
+/** Load tag candidates from disk or use default set. */
 export function loadTagCandidates() {
 	ensureDirs()
 
 	try {
 		if (fs.existsSync(TAGS_JSON)) {
 			const raw = fs.readFileSync(TAGS_JSON, 'utf-8')
-			const arr = JSON.parse(raw)
+			const arr = safeJsonParse(raw, DEFAULT_TAGS)
 
 			// Validate tags array
 			if (Array.isArray(arr) && arr.every((t) => typeof t === 'string')) return arr
@@ -361,7 +371,7 @@ export function loadTagCandidates() {
 	return DEFAULT_TAGS
 }
 
-// Save tag candidates to disk with validation
+/** Save tag candidates to disk with validation. */
 export function saveTagCandidates(tags = []) {
 	ensureDirs()
 
@@ -390,7 +400,7 @@ function cosineSimilarity(a = [], b = []) {
 	return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1)
 }
 
-// Summarize note text with tags
+/** Summarize note text and propose tags via chat completion. */
 export async function summarize(client, text, { model = DEFAULT_MODEL } = {}) {
 	// Check if summary is cached
 	const cached = getCachedSummary(text, model)
@@ -458,7 +468,7 @@ export async function rankTags(client, text) {
 	return ranked
 }
 
-// Evaluate summary quality against original note
+/** Evaluate summary quality against original note; returns scoring metrics. */
 export async function evaluateSummary(client, text, summary, { model = DEFAULT_MODEL } = {}) {
 	// Generate evaluation metrics
 	const completion = await client.chat.completions.create({
@@ -522,7 +532,7 @@ export async function evaluateSummary(client, text, summary, { model = DEFAULT_M
 	return { coverage, concision, formatting, factuality, feedback, usage: completion?.usage || null }
 }
 
-// Basic exponential backoff with jitter
+/** Basic exponential backoff with jitter around async fn. */
 export async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
 	let attempt = 0
 
@@ -546,7 +556,7 @@ export async function withRetries(fn, { retries = 3, baseDelayMs = 400 } = {}) {
 	}
 }
 
-// Simple concurrency limiter for bulk processing
+/** Simple concurrency limiter for bulk processing; returns aggregated results. */
 export async function processWithConcurrency(items, limit, handler) {
 	const queue = [...items]
 	const results = []

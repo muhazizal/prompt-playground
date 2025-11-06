@@ -1,12 +1,22 @@
 import { sendError } from '../utils/http.mjs'
 
-// Require an API key for AI routes. Supports per-request via X-API-Key,
-// otherwise falls back to process.env.OPENAI_API_KEY.
+/**
+ * Extract API key from request header or environment.
+ * - Prefers `X-API-Key` header; falls back to `OPENAI_API_KEY` env.
+ */
+function getApiKey(req) {
+	const headerKey = (req.headers['x-api-key'] || '').toString().trim()
+	const envKey = (process.env.OPENAI_API_KEY || '').toString().trim()
+	return headerKey || envKey
+}
+
+/**
+ * Express middleware requiring an API key for AI routes.
+ * Attaches the selected key as `req.aiApiKey` for downstream usage.
+ */
 export function requireApiKey() {
 	return function auth(req, res, next) {
-		const headerKey = (req.headers['x-api-key'] || '').toString().trim()
-		const envKey = (process.env.OPENAI_API_KEY || '').toString().trim()
-		const apiKey = headerKey || envKey
+		const apiKey = getApiKey(req)
 
 		if (!apiKey) {
 			return sendError(res, 401, 'UNAUTHORIZED', 'Missing API key', {
@@ -14,7 +24,6 @@ export function requireApiKey() {
 			})
 		}
 
-		// Attach selected key to request for downstream use
 		req.aiApiKey = apiKey
 		next()
 	}

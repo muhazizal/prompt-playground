@@ -16,30 +16,35 @@ import { sendError } from '../utils/http.mjs'
 
 import { inc } from '../metrics.mjs'
 import {
-	getRecentMessages,
+  getRecentMessages,
 	appendMessage,
 	clearSession,
 	trimMessagesToTokenBudget,
 	splitMessagesByBudget,
 	countMessagesTokens,
 	serializeContextToSystem,
-	buildSessionKey,
+  buildSessionKey,
 } from '../core/memory.mjs'
+
+import { toBool, toNum } from '../utils/http.mjs'
 
 /**
  * Register prompt-related API routes: /chat and /models.
  */
 export function registerPromptRoutes(app) {
-	// Dynamic model list with fallback
-	app.get('/prompt/models', requireApiKey(), async (req, res) => {
-		const models = await listModels()
-		res.json({ models })
-	})
+  // Dynamic model list with fallback
+  app.get('/prompt/models', requireApiKey(), async (req, res) => {
+    const models = await listModels()
+    res.json({ models })
+  })
 
-	// Chat completion with temperature control
-	app.post(
-		'/prompt/chat',
-		requireApiKey(),
+  /**
+   * Chat completion route.
+   * Validates body, supports memory/context controls, and returns multiple runs with temperature variations.
+   */
+  app.post(
+    '/prompt/chat',
+    requireApiKey(),
 		...validateBody({
 			prompt: { in: ['body'], optional: false, isString: true },
 			model: { in: ['body'], optional: true, isString: true },
@@ -155,12 +160,15 @@ export function registerPromptRoutes(app) {
 		}
 	)
 
-	// Chat completion stream with temperature control
-	const streamLimiter = createStreamRateLimit({ windowMs: 5 * 60_000, max: 30 })
-	app.get(
-		'/prompt/chat/stream',
-		requireApiKey(),
-		streamLimiter,
+  /**
+   * Chat completion streaming route.
+   * Uses SSE to stream assistant text and usage; supports memory and window-aware budget handling.
+   */
+  const streamLimiter = createStreamRateLimit({ windowMs: 5 * 60_000, max: 30 })
+  app.get(
+    '/prompt/chat/stream',
+    requireApiKey(),
+    streamLimiter,
 		// Basic query validation
 		...validateQuery({
 			prompt: {
@@ -184,28 +192,21 @@ export function registerPromptRoutes(app) {
 			},
 		}),
 		async (req, res) => {
-			try {
-				const client = getClient(req.aiApiKey)
-				const prompt = String(req.query.prompt || '')
-				const model = String(req.query.model || 'gpt-4o-mini')
-				const temperature =
-					req.query.temperature !== undefined ? Number(req.query.temperature) : 0.2
-				const maxTokens = req.query.maxTokens !== undefined ? Number(req.query.maxTokens) : 400
-				const useMemory =
-					String(req.query.useMemory || '') === 'true' || req.query.useMemory === true
-				const sid = req.query.sessionId || req.headers['x-session-id']
-				const sessionId = buildSessionKey(req, { sid, defaultScope: 'default' })
-				const reset = String(req.query.reset || '') === 'true' || req.query.reset === true
-				const memorySize = req.query.memorySize !== undefined ? Number(req.query.memorySize) : 30
-				const contextBudgetTokens =
-					req.query.contextBudgetTokens !== undefined
-						? Number(req.query.contextBudgetTokens)
-						: undefined
-				const summarizeOverflow =
-					String(req.query.summarizeOverflow || '') === 'true' ||
-					req.query.summarizeOverflow === true
-				const summaryMaxTokens =
-					req.query.summaryMaxTokens !== undefined ? Number(req.query.summaryMaxTokens) : 200
+      try {
+        const client = getClient(req.aiApiKey)
+        const prompt = String(req.query.prompt || '')
+        const model = String(req.query.model || 'gpt-4o-mini')
+        const temperature = toNum(req.query.temperature, 0.2)
+        const maxTokens = toNum(req.query.maxTokens, 400)
+        const useMemory = toBool(req.query.useMemory)
+        const sid = req.query.sessionId || req.headers['x-session-id']
+        const sessionId = buildSessionKey(req, { sid, defaultScope: 'default' })
+        const reset = toBool(req.query.reset)
+        const memorySize = toNum(req.query.memorySize, 30)
+        const contextBudgetTokens =
+          req.query.contextBudgetTokens !== undefined ? Number(req.query.contextBudgetTokens) : undefined
+        const summarizeOverflow = toBool(req.query.summarizeOverflow)
+        const summaryMaxTokens = toNum(req.query.summaryMaxTokens, 200)
 
 				if (!prompt.trim())
 					return sendError(res, 400, 'INVALID_INPUT', 'prompt must be a non-empty string')

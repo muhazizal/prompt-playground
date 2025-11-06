@@ -1,8 +1,8 @@
 import fs from 'fs'
 import path from 'path'
+import { createClient } from 'redis'
 import { get_encoding } from '@dqbd/tiktoken'
 import { CACHE_DIR } from './notes-core.mjs'
-import { createClient } from 'redis'
 
 // Persistent chat memory store (in-memory with disk sync)
 const MEMORY_FILE = path.join(CACHE_DIR, 'chat_memory.json')
@@ -16,7 +16,7 @@ const DEFAULT_TTL_SECONDS = Number(process.env.MEMORY_TTL_SECONDS || 86400)
 const DEFAULT_MAX_ITEMS = Number(process.env.MEMORY_MAX_ITEMS || 200)
 let redisClientPromise = null
 
-// Initialize Redis client if enabled
+/** Get Redis client if enabled; returns null on error. */
 async function getRedis() {
 	if (!USE_REDIS) return null
 	if (redisClientPromise) return redisClientPromise
@@ -35,14 +35,14 @@ async function getRedis() {
 	return redisClientPromise
 }
 
-// Ensure cache directory exists
+/** Ensure cache directory exists. */
 function ensureCacheDir() {
 	if (!fs.existsSync(CACHE_DIR)) {
 		fs.mkdirSync(CACHE_DIR, { recursive: true })
 	}
 }
 
-// Load memory from disk on-demand
+/** Load memory from disk into in-memory sessions map. */
 export function loadMemoryFromDisk() {
 	if (loaded) return
 
@@ -51,26 +51,28 @@ export function loadMemoryFromDisk() {
 	if (fs.existsSync(MEMORY_FILE)) {
 		try {
 			const raw = fs.readFileSync(MEMORY_FILE, 'utf-8')
-			const disk = JSON.parse(raw)
+			const disk = safeJsonParse(raw, {})
 
 			// Deserialize sessions from disk
 			for (const [key, arr] of Object.entries(disk || {})) {
 				if (Array.isArray(arr)) sessions.set(key, arr.filter(isValidMessage))
 			}
-		} catch {}
+		} catch (err) {
+			console.error('[memory] loadMemoryFromDisk error:', err?.message || String(err))
+		}
 	}
 
 	loaded = true
 }
 
-// Schedule disk save after 500ms of inactivity
+/** Debounced save scheduler (500ms). */
 function scheduleSave() {
 	if (saveTimer) clearTimeout(saveTimer)
 
 	saveTimer = setTimeout(saveMemoryToDisk, 500)
 }
 
-// Save memory to disk
+/** Persist sessions map to disk safely. */
 export function saveMemoryToDisk() {
 	ensureCacheDir()
 
@@ -83,15 +85,32 @@ export function saveMemoryToDisk() {
 
 	try {
 		fs.writeFileSync(MEMORY_FILE, JSON.stringify(obj, null, 2))
-	} catch {}
+	} catch (err) {
+		console.error('[memory] saveMemoryToDisk error:', err?.message || String(err))
+	}
 }
 
-// Validate message shape
+/** Validate message shape. */
 function isValidMessage(m) {
 	return m && typeof m.role === 'string' && m.role && typeof m.content !== 'undefined'
 }
 
-// Append message to session memory
+/** Safe JSON parse with fallback. */
+function safeJsonParse(str, fallback = null) {
+	try {
+		return JSON.parse(str)
+	} catch {
+		return fallback
+	}
+}
+
+/** Clamp array length from the front to maxItems. */
+function clampArraySize(arr, maxItems) {
+	if (arr.length > maxItems) arr.splice(0, arr.length - maxItems)
+	return arr
+}
+
+/** Append a message to session memory (Redis or in-memory). */
 export async function appendMessage(
 	sessionId,
 	msg,
@@ -120,15 +139,13 @@ export async function appendMessage(
 
 	const arr = sessions.get(key) || []
 	arr.push({ role: msg.role, content: msg.content })
-
-	// Clamp session size
-	if (arr.length > maxItems) arr.splice(0, arr.length - maxItems)
+	clampArraySize(arr, maxItems)
 
 	sessions.set(key, arr)
 	scheduleSave()
 }
 
-// Get recent messages from session memory
+/** Get recent messages from session memory. */
 export async function getRecentMessages(sessionId, { limit = 50 } = {}) {
 	loadMemoryFromDisk()
 
@@ -144,15 +161,7 @@ export async function getRecentMessages(sessionId, { limit = 50 } = {}) {
 			const start = Math.max(0, len - limit)
 			const list = await r.lRange(key, start, len - 1)
 
-			return list
-				.map((s) => {
-					try {
-						return JSON.parse(s)
-					} catch {
-						return null
-					}
-				})
-				.filter(isValidMessage)
+			return list.map((s) => safeJsonParse(s, null)).filter(isValidMessage)
 		} catch (err) {
 			console.error('[memory] Redis getRecent error:', err?.message || String(err))
 			return []
@@ -163,7 +172,7 @@ export async function getRecentMessages(sessionId, { limit = 50 } = {}) {
 	return arr.slice(-limit)
 }
 
-// Clear session memory
+/** Clear all messages in a session. */
 export async function clearSession(sessionId) {
 	loadMemoryFromDisk()
 
@@ -184,7 +193,7 @@ export async function clearSession(sessionId) {
 	scheduleSave()
 }
 
-// Approximate token counting and trimming for messages
+/** Approximate token counting for messages. */
 export function countMessagesTokens(messages, { tokenizer = 'cl100k_base' } = {}) {
 	const enc = get_encoding(tokenizer)
 	let count = 0
@@ -201,7 +210,7 @@ export function countMessagesTokens(messages, { tokenizer = 'cl100k_base' } = {}
 	return count + 2
 }
 
-// Split messages into chunks fitting within token budget
+/** Split messages to fit within token budget (returns kept + overflow). */
 export function splitMessagesByBudget(messages, budgetTokens, { tokenizer = 'cl100k_base' } = {}) {
 	const sys = messages.filter((m) => m.role === 'system')
 	const others = messages.filter((m) => m.role !== 'system')
@@ -225,7 +234,7 @@ export function splitMessagesByBudget(messages, budgetTokens, { tokenizer = 'cl1
 	return { kept: [...sys, ...kept], overflow }
 }
 
-// Trim messages to fit within token budget
+/** Trim messages to fit within token budget (drops earliest non-system). */
 export function trimMessagesToTokenBudget(
 	messages,
 	budgetTokens,
@@ -246,7 +255,7 @@ export function trimMessagesToTokenBudget(
 	return [...sys, ...trimmed]
 }
 
-/** Serialize context object safely to a compact system message */
+/** Serialize a context object safely to a compact system message. */
 export function serializeContextToSystem(context) {
 	try {
 		const safe = JSON.stringify(context, (_k, v) => (typeof v === 'function' ? undefined : v))
@@ -262,6 +271,7 @@ export function serializeContextToSystem(context) {
  * - Prepends `x-user-id` if present.
  * - Avoids double-prepending when `sessionIdRaw` already starts with `userId:`.
  */
+/** Build a normalized per-request session key. */
 export function buildSessionKey(req, { sid, defaultScope = 'default' } = {}) {
 	const userId = req.headers['x-user-id'] || null
 	const rawHeader = req.headers['x-session-id']

@@ -13,6 +13,44 @@ import { createRateLimitMiddleware } from './middleware/rateLimit.mjs'
 
 dotenv.config()
 
+/**
+ * Attach global middlewares to the provided Express app.
+ * Single responsibility: logging, metrics, CORS, body parsers, and rate limiting.
+ *
+ * @param {import('express').Express} app
+ */
+function attachGlobalMiddlewares(app) {
+  // Allow multiple dev origins by default and merge with WEB_ORIGIN
+  const ORIGINS = Array.from(
+    new Set([
+      ...(process.env.WEB_ORIGIN ? process.env.WEB_ORIGIN.split(',').map((s) => s.trim()) : []),
+      'http://localhost:3000',
+      'http://localhost:3002',
+    ])
+  )
+
+  app.use(createLoggingMiddleware())
+  app.use(createRequestCounterMiddleware())
+  app.use(cors({ origin: ORIGINS }))
+  // Increase body size limits to avoid 413 for base64 image/audio payloads
+  const BODY_LIMIT = process.env.JSON_LIMIT || '5mb'
+  app.use(express.json({ limit: BODY_LIMIT }))
+  app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }))
+  app.use(createRateLimitMiddleware({ windowMs: 60_000, max: 120 }))
+}
+
+/**
+ * Register all API routes on the provided app.
+ *
+ * @param {import('express').Express} app
+ */
+function registerRoutes(app) {
+  registerNotesRoutes(app)
+  registerPromptRoutes(app)
+  registerAgentRoutes(app)
+  registerMetricsRoute(app)
+}
+
 const app = express()
 const PORT = process.env.PORT || 4000
 
@@ -25,20 +63,9 @@ const ORIGINS = Array.from(
 	])
 )
 
-// Global middlewares: logging, request counter, CORS, JSON/urlencoded parsers with higher limits, rate limit
-app.use(createLoggingMiddleware())
-app.use(createRequestCounterMiddleware())
-app.use(cors({ origin: ORIGINS }))
-// Increase body size limits to avoid 413 for base64 image/audio payloads
-const BODY_LIMIT = process.env.JSON_LIMIT || '5mb'
-app.use(express.json({ limit: BODY_LIMIT }))
-app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }))
-app.use(createRateLimitMiddleware({ windowMs: 60_000, max: 120 }))
-
-registerNotesRoutes(app)
-registerPromptRoutes(app)
-registerAgentRoutes(app)
-registerMetricsRoute(app)
+// Global middlewares and routes
+attachGlobalMiddlewares(app)
+registerRoutes(app)
 
 // Chat and models routes are now registered via prompt.mjs
 

@@ -5,6 +5,11 @@ import { requireApiKey } from '../middleware/auth.mjs'
 import { validateBody } from '../middleware/validate.mjs'
 import { sendError } from '../utils/http.mjs'
 
+/**
+ * Register Agent routes.
+ *
+ * @param {import('express').Express} app - Express application instance
+ */
 export function registerAgentRoutes(app) {
 	app.post(
 		'/agent/run',

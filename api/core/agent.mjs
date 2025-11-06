@@ -10,6 +10,11 @@ import {
 	serializeContextToSystem,
 } from './memory.mjs'
 import { semanticSearchNotes, listNoteFiles, readNote, findNoteByQuery } from './notes-core.mjs'
+import { DOCS_TOPK, DOC_CAP } from '../utils/constants.mjs'
+import { mergeDocSources } from '../utils/source.mjs'
+import { normalizeUsage, estimateCostUSD } from '../utils/usage.mjs'
+import { validateResultShape } from '../utils/llm.mjs'
+import { planTools, classifyIntent } from '../utils/planner.mjs'
 
 /**
  * Weather tool using WeatherAPI.com
@@ -63,7 +68,7 @@ async function weatherTool(query) {
 /**
  * Docs tool using embeddings-based semantic search over local notes.
  */
-async function docsTool(client, query, { topK = 3 } = {}) {
+async function docsTool(client, query, { topK = DOCS_TOPK } = {}) {
 	try {
 		const results = await semanticSearchNotes(client, query || 'project overview', { topK })
 		const summary = results
@@ -155,20 +160,6 @@ No markdown, no prose outside JSON.`
 }
 
 /**
- * Decide which tools to run based on the prompt only.
- */
-function planTools(prompt) {
-	const txt = String(prompt || '').toLowerCase()
-	const wantsWeather = /\b(weather|temperature|forecast|rain|sunny|wind)\b/.test(txt)
-	const wantsDocs =
-		/\b(note|notes|week|phase|doc|docs|project|agent|embedding|prompt|summarize|summary|title|titles|list|count|how\s+many)\b/.test(
-			txt
-		)
-
-	return { wantsWeather, wantsDocs }
-}
-
-/**
  * Extract a plausible weather location from prompt.
  * Looks for patterns like "weather in <location>" or "forecast for <location>".
  */
@@ -249,77 +240,143 @@ function extractDocFilename(prompt) {
 }
 
 /**
- * Classify prompt intent using a small LLM and return strict JSON.
- * Shape: { intent: string, args?: object, confidence?: number }
+ * Plan and execute the weather tool based on prompt/classification.
+ * Returns { weather, steps } where weather may be null.
  */
-async function classifyIntent(client, prompt) {
-	try {
-		const sys = {
-			role: 'system',
-			content:
-				'Return STRICT JSON: {"intent": string, "args": object, "confidence": number}. ' +
-				'intents: ["list_notes","count_notes","titles","find_note","summarize_note","search_docs","weather","chat","multi"]. ' +
-				'Do not include markdown or commentary.',
-		}
-		const user = { role: 'user', content: String(prompt || '') }
-		const res = await client.chat.completions.create({
-			model: 'gpt-4o-mini',
-			temperature: 0,
-			max_tokens: 120,
-			response_format: { type: 'json_object' },
-			messages: [sys, user],
-		})
-		const text = res?.choices?.[0]?.message?.content || '{}'
-		const parsed = JSON.parse(text)
-		const intent = typeof parsed.intent === 'string' ? parsed.intent : 'chat'
-		const args = parsed && typeof parsed.args === 'object' ? parsed.args : {}
-		const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0
-
-		return { intent, args, confidence }
-	} catch (e) {
-		return { intent: 'chat', args: {}, confidence: 0 }
+async function planWeatherTool(prompt, classification) {
+	const steps = []
+	const locFromCls =
+		typeof classification?.args?.location === 'string' ? classification.args.location : null
+	const loc = locFromCls || extractWeatherLocation(prompt)
+	if (loc) {
+		const weather = await weatherTool(loc)
+		steps.push(`tool:weather:${loc}`)
+		return { weather, steps }
 	}
+	steps.push('tool:weather:skipped:no_location')
+	return { weather: null, steps }
 }
 
 /**
- * Estimate cost (USD) given usage tokens and model.
+ * Plan and execute docs-related tools based on prompt/classification.
+ * Returns { context, steps } where context may include docs, docsExact, docsList.
  */
-function estimateCostUSD(usage, model = 'gpt-4o-mini') {
-	if (!usage) return null
-	const PRICES = {
-		'gpt-4o-mini': { inputPerM: 0.15, outputPerM: 0.6 },
-	}
-	const p = PRICES[model] || PRICES['gpt-4o-mini']
-	const pi = ((usage.prompt_tokens ?? usage.promptTokens) || 0) / 1_000_000
-	const po = ((usage.completion_tokens ?? usage.completionTokens) || 0) / 1_000_000
+async function planDocsTools(client, prompt, classification) {
+	const steps = []
+	const context = {}
+	const dq = classification?.args?.query || extractDocsQuery(prompt)
+	const wantsList =
+		classification.intent === 'list_notes' ||
+		classification.intent === 'count_notes' ||
+		classification.intent === 'titles' ||
+		(/\b(list|count|how\s+many)\b/i.test(prompt) &&
+			/\b(note|notes|doc|docs|title|titles)\b/i.test(prompt))
 
-	return Number((pi * p.inputPerM + po * p.outputPerM).toFixed(6))
+	const exactNameArg =
+		typeof classification?.args?.filename === 'string' ? classification.args.filename : null
+	const exactName = exactNameArg || extractDocFilename(prompt)
+
+	if (wantsList) {
+		context.docsList = docsListTool()
+		steps.push('tool:docs:list')
+	}
+
+	if (exactName) {
+		context.docsExact = docsExactTool(exactName)
+		steps.push(`tool:docs:exact:${exactName}`)
+	} else if (
+		!wantsList ||
+		classification.intent === 'search_docs' ||
+		classification.intent === 'multi'
+	) {
+		context.docs = await docsTool(client, dq, { topK: 3 })
+		steps.push(`tool:docs:${(dq || '').slice(0, 32)}`)
+	}
+
+	return { context, steps }
 }
 
 /**
- * Validate and normalize the result shape.
+ * Build trimmed messages including memory and tool context.
+ * Returns { messages, memorySummary, step }.
  */
-function validateResultShape(obj) {
-	const errors = []
-	const out = { intent: 'chat', answer: '', sources: [] }
-	try {
-		const parsed = typeof obj === 'string' ? JSON.parse(obj) : obj
+async function buildMessages({ client, prompt, useMemory, sessionId, model, toolsContext }) {
+	const recent = useMemory ? await getRecentMessages(sessionId, { limit: 20 }) : []
+	const memorySummary = recent.length > 0 ? await summarizeMessages(client, recent) : ''
+	const sys = { role: 'system', content: buildSystemInstructions() }
+	const ctx = serializeContextToSystem({ memorySummary, tools: toolsContext })
+	const base = [...(useMemory ? recent : []), sys, ctx, { role: 'user', content: prompt }]
+	const budget = Math.floor(getModelContextWindow(model) * 0.8)
+	const messages = trimMessagesToTokenBudget(base, budget)
+	return { messages, memorySummary, step: `memory:msgs=${recent.length}` }
+}
 
-		// Validate intent
-		if (parsed && typeof parsed.intent === 'string') out.intent = parsed.intent
-		else errors.push('intent missing')
-
-		// Validate answer
-		if (parsed && typeof parsed.answer === 'string') out.answer = parsed.answer
-		else errors.push('answer missing')
-
-		// Validate sources
-		if (parsed && Array.isArray(parsed.sources)) out.sources = parsed.sources
-		else errors.push('sources missing')
-	} catch (e) {
-		errors.push('json parse failed')
+/**
+ * Ensure an answer exists by falling back to tool summaries when needed.
+ */
+function finalizeAnswer(normalized, toolsContext) {
+	if (!normalized.answer || !normalized.answer.trim()) {
+		const fallback =
+			(toolsContext?.docsExact?.summary && String(toolsContext.docsExact.summary)) ||
+			(toolsContext?.docs?.summary && String(toolsContext.docs.summary)) ||
+			(toolsContext?.weather?.summary && String(toolsContext.weather.summary)) ||
+			''
+		if (fallback) normalized.answer = fallback.slice(0, 500)
 	}
-	return { normalized: out, errors }
+	return normalized
+}
+
+/**
+ * Assemble structured sources from tools, normalized JSON, and memory.
+ */
+function assembleSources({ normalized, toolsContext, memorySummary, useMemory }) {
+	const docSources = Array.isArray(toolsContext?.docs?.results)
+		? toolsContext.docs.results.map((r) => ({
+				type: 'doc',
+				file: r.file,
+				snippet: r.snippet,
+				score: r.score,
+		  }))
+		: []
+	const docExactSources = Array.isArray(toolsContext?.docsExact?.results)
+		? toolsContext.docsExact.results.map((r) => ({
+				type: 'doc',
+				file: r.file,
+				snippet: r.snippet,
+				score: r.score,
+		  }))
+		: []
+	const docListSources = Array.isArray(toolsContext?.docsList?.results)
+		? toolsContext.docsList.results.map((r) => ({ type: 'doc', file: r.file }))
+		: []
+	const weatherSrc = toolsContext?.weather?.ok
+		? [
+				{
+					type: 'weather',
+					title: toolsContext.weather?.data?.location?.name || null,
+					url: toolsContext.weather?.source || null,
+					snippet: toolsContext.weather?.summary,
+					meta: {
+						temp_c: toolsContext.weather?.data?.current?.temp_c,
+						condition: toolsContext.weather?.data?.current?.condition?.text,
+					},
+				},
+		  ]
+		: []
+	const normalizedStrings = Array.isArray(normalized.sources)
+		? normalized.sources.map((s) => (typeof s === 'string' ? { type: 'doc', file: s } : s))
+		: []
+	const memorySrc = useMemory && memorySummary ? [{ type: 'memory', snippet: memorySummary }] : []
+
+	const cappedDocSources = mergeDocSources({
+		docSources,
+		docExactSources,
+		docListSources,
+		normalizedDocStrings: normalizedStrings,
+		cap: DOC_CAP,
+	})
+
+	return [...weatherSrc, ...cappedDocSources, ...memorySrc]
 }
 
 /**
@@ -364,68 +421,34 @@ export async function runAgent(
 
 	// Plan weather tool
 	if (wantsWeather) {
-		const locFromCls =
-			typeof classification?.args?.location === 'string' ? classification.args.location : null
-		const loc = locFromCls || extractWeatherLocation(prompt)
-
-		if (loc) {
-			toolsContext.weather = await weatherTool(loc)
-			steps.push(`tool:weather:${loc}`)
-		} else {
-			steps.push('tool:weather:skipped:no_location')
-		}
+		const { weather, steps: ws } = await planWeatherTool(prompt, classification)
+		if (weather) toolsContext.weather = weather
+		steps.push(...ws)
 	}
 
 	// Plan docs tools
 	if (wantsDocs) {
-		const dq = classification?.args?.query || extractDocsQuery(prompt)
-		const wantsList =
-			classification.intent === 'list_notes' ||
-			classification.intent === 'count_notes' ||
-			classification.intent === 'titles' ||
-			(/\b(list|count|how\s+many)\b/i.test(prompt) &&
-				/\b(note|notes|doc|docs|title|titles)\b/i.test(prompt))
-
-		const exactNameArg =
-			typeof classification?.args?.filename === 'string' ? classification.args.filename : null
-		const exactName = exactNameArg || extractDocFilename(prompt)
-
-		// Plan list tool
-		if (wantsList) {
-			toolsContext.docsList = docsListTool()
-			steps.push('tool:docs:list')
-		}
-
-		// Plan exact tool
-		if (exactName) {
-			toolsContext.docsExact = docsExactTool(exactName)
-			steps.push(`tool:docs:exact:${exactName}`)
-		} else if (
-			!wantsList ||
-			classification.intent === 'search_docs' ||
-			classification.intent === 'multi'
-		) {
-			// Plan search tool
-			toolsContext.docs = await docsTool(client, dq, { topK: 3 })
-			steps.push(`tool:docs:${(dq || '').slice(0, 32)}`)
-		}
+		const { context: dctx, steps: ds } = await planDocsTools(client, prompt, classification)
+		Object.assign(toolsContext, dctx)
+		steps.push(...ds)
 	}
 
 	steps.push('tools:done')
 
-	// Memory
-	const recent = useMemory ? await getRecentMessages(sessionId, { limit: 20 }) : []
-	const memorySummary = recent.length > 0 ? await summarizeMessages(client, recent) : ''
-	steps.push(`memory:msgs=${recent.length}`)
-
-	// Build messages
-	const sys = { role: 'system', content: buildSystemInstructions() }
-	const ctx = serializeContextToSystem({ memorySummary, tools: toolsContext })
-	const base = [...(useMemory ? recent : []), sys, ctx, { role: 'user', content: prompt }]
-
-	// Trim to budget
-	const budget = Math.floor(getModelContextWindow(model) * 0.8)
-	const messages = trimMessagesToTokenBudget(base, budget)
+	// Build messages + memory
+	const {
+		messages,
+		memorySummary,
+		step: memStep,
+	} = await buildMessages({
+		client,
+		prompt,
+		useMemory,
+		sessionId,
+		model,
+		toolsContext,
+	})
+	steps.push(memStep)
 
 	// LLM call
 	const started = Date.now()
@@ -438,108 +461,18 @@ export async function runAgent(
 	})
 	const durationMs = Date.now() - started
 	const text = completion?.choices?.[0]?.message?.content || ''
-	const { normalized, errors } = validateResultShape(text)
+	const { normalized: rawNormalized, errors } = validateResultShape(text)
+	const normalized = finalizeAnswer(rawNormalized, toolsContext)
 
 	steps.push(`llm:end:${durationMs}ms`)
 
-	// Fallback answer if model failed to provide one
-	if (!normalized.answer || !normalized.answer.trim()) {
-		const fallback =
-			(toolsContext?.docsExact?.summary && String(toolsContext.docsExact.summary)) ||
-			(toolsContext?.docs?.summary && String(toolsContext.docs.summary)) ||
-			(toolsContext?.weather?.summary && String(toolsContext.weather.summary)) ||
-			''
-		if (fallback) normalized.answer = fallback.slice(0, 500)
-	}
+	// normalized already finalized above
 
 	// Persist memory
 	await appendMessage(sessionId, { role: 'user', content: prompt })
 	await appendMessage(sessionId, { role: 'assistant', content: text })
 
-	// Assemble structured sources
-	const docSources = Array.isArray(toolsContext?.docs?.results)
-		? toolsContext.docs.results.map((r) => ({
-				type: 'doc',
-				file: r.file,
-				snippet: r.snippet,
-				score: r.score,
-		  }))
-		: []
-	const docExactSources = Array.isArray(toolsContext?.docsExact?.results)
-		? toolsContext.docsExact.results.map((r) => ({
-				type: 'doc',
-				file: r.file,
-				snippet: r.snippet,
-				score: r.score,
-		  }))
-		: []
-	const docListSources = Array.isArray(toolsContext?.docsList?.results)
-		? toolsContext.docsList.results.map((r) => ({ type: 'doc', file: r.file }))
-		: []
-	const weatherSrc = toolsContext?.weather?.ok
-		? [
-				{
-					type: 'weather',
-					title: toolsContext.weather?.data?.location?.name || null,
-					url: toolsContext.weather?.source || null,
-					snippet: toolsContext.weather?.summary,
-					meta: {
-						temp_c: toolsContext.weather?.data?.current?.temp_c,
-						condition: toolsContext.weather?.data?.current?.condition?.text,
-					},
-				},
-		  ]
-		: []
-	const normalizedStrings = Array.isArray(normalized.sources)
-		? normalized.sources.map((s) => (typeof s === 'string' ? { type: 'doc', file: s } : s))
-		: []
-	const memorySrc = useMemory && memorySummary ? [{ type: 'memory', snippet: memorySummary }] : []
-
-	// Dedupe and prefer richer doc sources (with snippet/score). Drop doc list entries when scorable docs exist.
-	const docPool = [...docExactSources, ...docSources]
-	const hasScorableDocs = docPool.length > 0
-	const docListIncluded = hasScorableDocs ? [] : docListSources
-	const docCandidates = [
-		...docPool,
-		...docListIncluded,
-		...normalizedStrings.filter((x) => x?.type === 'doc'),
-	]
-	const docByFile = new Map()
-
-	// Dedupe doc sources by file, preferring richer entries
-	for (const d of docCandidates) {
-		if (!d || !d.file) continue
-		const prev = docByFile.get(d.file)
-		const prevScore = typeof prev?.score === 'number' ? prev.score : -Infinity
-		const curScore = typeof d?.score === 'number' ? d.score : -Infinity
-		const prevHasSnippet = !!prev?.snippet
-		const curHasSnippet = !!d?.snippet
-		// Pick better: prefer snippet; if both have snippet, prefer higher score; else prefer with score
-		const pickCurrent =
-			!prev ||
-			(!prevHasSnippet && curHasSnippet) ||
-			(prevHasSnippet && curHasSnippet && curScore > prevScore) ||
-			(!prevHasSnippet && !curHasSnippet && curScore > prevScore)
-		if (pickCurrent) docByFile.set(d.file, d)
-	}
-	const mergedDocSources = Array.from(docByFile.values())
-
-	// Optionally cap to top N by score where available
-	mergedDocSources.sort((a, b) => Number(b.score || -Infinity) - Number(a.score || -Infinity))
-	const DOC_CAP = 10
-	const cappedDocSources = mergedDocSources.slice(0, DOC_CAP)
-
-	const combinedSources = [...weatherSrc, ...cappedDocSources, ...memorySrc]
-
-	// Normalize usage stats
-	function normalizeUsage(u) {
-		if (!u) return null
-		return {
-			promptTokens: u.promptTokens ?? u.prompt_tokens ?? null,
-			completionTokens: u.completionTokens ?? u.completion_tokens ?? null,
-			totalTokens: u.totalTokens ?? u.total_tokens ?? null,
-		}
-	}
+	const combinedSources = assembleSources({ normalized, toolsContext, memorySummary, useMemory })
 
 	const result = {
 		...normalized,
@@ -552,8 +485,10 @@ export async function runAgent(
 		costUsd: estimateCostUSD(completion?.usage || null, model),
 		steps,
 	}
+
 	if (debug) {
 		result.debug = { messages, toolsContext, validationErrors: errors }
 	}
+
 	return result
 }
