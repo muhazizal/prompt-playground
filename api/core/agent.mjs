@@ -9,7 +9,7 @@ import {
 	trimMessagesToTokenBudget,
 	serializeContextToSystem,
 } from './memory.mjs'
-import { semanticSearchNotes, listNoteFiles, readNote } from './notes-core.mjs'
+import { semanticSearchNotes, listNoteFiles, readNote, findNoteByQuery } from './notes-core.mjs'
 
 /**
  * Weather tool using WeatherAPI.com
@@ -98,15 +98,8 @@ function docsListTool() {
  */
 function docsExactTool(query) {
 	try {
-		const q = String(query || '')
-			.trim()
-			.toLowerCase()
-			.replace(/\.md$/i, '')
-		const files = listNoteFiles()
-		const match = files.find((f) => {
-			const base = f.name.toLowerCase().replace(/\.md$/i, '')
-			return base === q || base.includes(q)
-		})
+		const q = String(query || '').trim()
+		const match = findNoteByQuery(q)
 		if (!match)
 			return { ok: false, summary: `No exact note match for "${query}"`, sources: [], results: [] }
 		const text = readNote(match.path)
@@ -200,12 +193,47 @@ function extractDocsQuery(prompt) {
 
 /** Extract a probable doc filename like "phase-1-week-2" (optional .md) */
 function extractDocFilename(prompt) {
-	const txt = String(prompt || '').toLowerCase()
-	const m = txt.match(/\bphase\s*-?\s*(\d+)\s*-?\s*week\s*-?\s*(\d+)\b/)
-	if (m) return `phase-${m[1]}-week-${m[2]}`
-	const m2 = txt.match(/\b([a-z0-9\-]+)\.md\b/)
-	if (m2) return m2[1]
-	return null
+  const txt = String(prompt || '').toLowerCase()
+  let m = txt.match(/\bphase\s*-?\s*(\d+)\b[^a-z0-9]+\bweek\s*-?\s*(\d+)\b/)
+  if (m) return `phase-${m[1]}-week-${m[2]}`
+  m = txt.match(/\bweek\s*-?\s*(\d+)\b[^a-z0-9]+\bphase\s*-?\s*(\d+)\b/)
+  if (m) return `phase-${m[2]}-week-${m[1]}`
+  m = txt.match(/\bp\s*-?\s*(\d+)\s*-?\s*w\s*-?\s*(\d+)\b/)
+  if (m) return `phase-${m[1]}-week-${m[2]}`
+  m = txt.match(/\b([a-z0-9\-]+)\.md\b/)
+  if (m) return m[1]
+  return null
+}
+
+/**
+ * Classify prompt intent using a small LLM and return strict JSON.
+ * Shape: { intent: string, args?: object, confidence?: number }
+ */
+async function classifyIntent(client, prompt) {
+  try {
+    const sys = {
+      role: 'system',
+      content:
+        'Return STRICT JSON: {"intent": string, "args": object, "confidence": number}. ' +
+        'intents: ["list_notes","count_notes","titles","find_note","summarize_note","search_docs","weather","chat","multi"]. ' +
+        'Do not include markdown or commentary.',
+    }
+    const user = { role: 'user', content: String(prompt || '') }
+    const res = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      max_tokens: 120,
+      messages: [sys, user],
+    })
+    const text = res?.choices?.[0]?.message?.content || '{}'
+    const parsed = JSON.parse(text)
+    const intent = typeof parsed.intent === 'string' ? parsed.intent : 'chat'
+    const args = parsed && typeof parsed.args === 'object' ? parsed.args : {}
+    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0
+    return { intent, args, confidence }
+  } catch (e) {
+    return { intent: 'chat', args: {}, confidence: 0 }
+  }
 }
 
 /**
@@ -264,11 +292,25 @@ export async function runAgent(
 	// Tools
 	const steps = ['init']
 	const toolsContext = {}
-	const { wantsWeather, wantsDocs } = planTools(prompt)
+	const { wantsWeather: hw, wantsDocs: hd } = planTools(prompt)
+	// Classify intent via LLM to augment heuristic planning
+	const classification = await classifyIntent(client, prompt)
+	steps.push(`classify:${classification.intent}:${String(classification.confidence ?? 0)}`)
+	const wantsWeather = hw || classification.intent === 'weather'
+	const wantsDocs =
+		hd ||
+		classification.intent === 'list_notes' ||
+		classification.intent === 'count_notes' ||
+		classification.intent === 'titles' ||
+		classification.intent === 'find_note' ||
+		classification.intent === 'summarize_note' ||
+		classification.intent === 'search_docs' ||
+		classification.intent === 'multi'
 
 	// Run tools
 	if (wantsWeather) {
-		const loc = extractWeatherLocation(prompt)
+		const locFromCls = typeof classification?.args?.location === 'string' ? classification.args.location : null
+		const loc = locFromCls || extractWeatherLocation(prompt)
 		if (loc) {
 			toolsContext.weather = await weatherTool(loc)
 			steps.push(`tool:weather:${loc}`)
@@ -277,11 +319,14 @@ export async function runAgent(
 		}
 	}
 	if (wantsDocs) {
-		const dq = extractDocsQuery(prompt)
+		const dq = classification?.args?.query || extractDocsQuery(prompt)
 		const wantsList =
-			/\b(list|count|how\s+many)\b/i.test(prompt) &&
-			/\b(note|notes|doc|docs|title|titles)\b/i.test(prompt)
-		const exactName = extractDocFilename(prompt)
+			classification.intent === 'list_notes' ||
+			classification.intent === 'count_notes' ||
+			classification.intent === 'titles' ||
+			(/\b(list|count|how\s+many)\b/i.test(prompt) && /\b(note|notes|doc|docs|title|titles)\b/i.test(prompt))
+		const exactNameArg = typeof classification?.args?.filename === 'string' ? classification.args.filename : null
+		const exactName = exactNameArg || extractDocFilename(prompt)
 		if (wantsList) {
 			toolsContext.docsList = docsListTool()
 			steps.push('tool:docs:list')

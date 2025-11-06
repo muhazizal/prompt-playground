@@ -156,6 +156,72 @@ export function readNote(filePath) {
 	}
 }
 
+// Normalize text to a simple key for matching
+function normalizeKey(str = '') {
+  return String(str || '')
+    .toLowerCase()
+    .replace(/\.md$/i, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+// Parse phase/week patterns from arbitrary text
+export function parsePhaseWeek(text = '') {
+  const s = String(text || '').toLowerCase()
+  let m = s.match(/\bphase\s*([0-9]+)[^a-z0-9]+week\s*([0-9]+)\b/)
+  if (m) return { phase: Number(m[1]), week: Number(m[2]) }
+  m = s.match(/\bweek\s*([0-9]+)[^a-z0-9]+phase\s*([0-9]+)\b/)
+  if (m) return { phase: Number(m[2]), week: Number(m[1]) }
+  m = s.match(/\bp\s*([0-9]+)\s*w\s*([0-9]+)\b/)
+  if (m) return { phase: Number(m[1]), week: Number(m[2]) }
+  m = s.match(/\bphase\s*([0-9]+)[^a-z0-9]*wk\s*([0-9]+)\b/)
+  if (m) return { phase: Number(m[1]), week: Number(m[2]) }
+  return null
+}
+
+function canonicalSlugFromPW(pw) {
+  if (!pw) return null
+  const { phase, week } = pw
+  if (!phase || !week) return null
+  return `phase-${phase}-week-${week}`
+}
+
+// Build slug index for note filenames
+export function buildNoteSlugIndex() {
+  const files = listNoteFiles()
+  return files.map((f) => {
+    const base = normalizeKey(f.name)
+    const pw = parsePhaseWeek(f.name)
+    const canon = canonicalSlugFromPW(pw)
+    const variants = new Set([base])
+    if (canon) variants.add(normalizeKey(canon))
+    if (pw) variants.add(normalizeKey(`p${pw.phase}w${pw.week}`))
+    return { name: f.name, path: f.path, slugs: Array.from(variants) }
+  })
+}
+
+// Find a note by query using slug index and heuristics
+export function findNoteByQuery(query = '') {
+  const idx = buildNoteSlugIndex()
+  const qKey = normalizeKey(query)
+  const pw = parsePhaseWeek(query)
+  const canon = canonicalSlugFromPW(pw)
+  const candidates = canon ? [normalizeKey(canon), normalizeKey(`p${pw.phase}w${pw.week}`), qKey] : [qKey]
+  // Exact slug match
+  for (const entry of idx) {
+    for (const c of candidates) {
+      if (entry.slugs.includes(c)) return entry
+    }
+  }
+  // Fallback: includes check on keys
+  for (const entry of idx) {
+    if (entry.slugs.some((s) => s.includes(qKey))) return entry
+    const nameKey = normalizeKey(entry.name)
+    if (nameKey.includes(qKey)) return entry
+  }
+  return null
+}
+
 // Generate SHA-1 hash for text
 function sha1(str) {
 	return crypto.createHash('sha1').update(str).digest('hex')
