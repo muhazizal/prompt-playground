@@ -9,13 +9,16 @@ import type {
 } from '@/helpers/types'
 import type { QueryDocumentSnapshot, Timestamp } from 'firebase/firestore'
 
-import AppBreadcrumb from '~/components/history/AppBreadcrumb.vue'
-import PaginatedList from '~/components/history/PaginatedList.vue'
-import PromptRunCard from '~/components/history/PromptRunCard.vue'
-import SimpleHistoryCard from '~/components/history/SimpleHistoryCard.vue'
+import AppBreadcrumb from '~/components/app/AppBreadcrumb.vue'
+import HistoryList from '~/components/history/HistoryList.vue'
+import HistoryPromptCard from '~/components/history/HistoryPromptCard.vue'
+import HistorySimpleCard from '~/components/history/HistorySimpleCard.vue'
 
 // Breadcrumb
-const breadcrumb: BreadcrumbItem[] = [{ label: 'Prompt Playground', to: '/prompt' }, { label: 'History' }]
+const breadcrumb: BreadcrumbItem[] = [
+	{ label: 'Prompt Playground', to: '/prompt' },
+	{ label: 'History' },
+]
 
 // Tabs (per-type only)
 const tab = ref<'text' | 'vision' | 'stt' | 'tts' | 'image'>('text')
@@ -29,27 +32,27 @@ const tabs = [
 
 // Mappers
 function mapPlayground(doc: QueryDocumentSnapshot<HistoryEntry>): HistoryEntry {
-  const data = doc.data() as any
-  const createdAt = data?.createdAt as Timestamp | undefined
-  const at = createdAt?.toDate?.() ? createdAt.toDate().getTime() : data?.at ?? Date.now()
-  return { id: doc.id, ...data, at } as HistoryEntry
+	const data = doc.data() as any
+	const createdAt = data?.createdAt as Timestamp | undefined
+	const at = createdAt?.toDate?.() ? createdAt.toDate().getTime() : data?.at ?? Date.now()
+	return { id: doc.id, ...data, at } as HistoryEntry
 }
 
 function mapVision(doc: QueryDocumentSnapshot<VisionHistory>): VisionHistory {
-  const data = doc.data() as any
-  return { id: doc.id, ...data } as VisionHistory
+	const data = doc.data() as any
+	return { id: doc.id, ...data } as VisionHistory
 }
 function mapTranscription(doc: QueryDocumentSnapshot<TranscriptionHistory>): TranscriptionHistory {
-  const data = doc.data() as any
-  return { id: doc.id, ...data } as TranscriptionHistory
+	const data = doc.data() as any
+	return { id: doc.id, ...data } as TranscriptionHistory
 }
 function mapTTS(doc: QueryDocumentSnapshot<TTSHistory>): TTSHistory {
-  const data = doc.data() as any
-  return { id: doc.id, ...data } as TTSHistory
+	const data = doc.data() as any
+	return { id: doc.id, ...data } as TTSHistory
 }
 function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHistory {
-  const data = doc.data() as any
-  return { id: doc.id, ...data } as ImageGenHistory
+	const data = doc.data() as any
+	return { id: doc.id, ...data } as ImageGenHistory
 }
 </script>
 
@@ -62,20 +65,20 @@ function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHisto
 		</div>
 
 		<div v-if="tab === 'text'">
-            <PaginatedList
-                collection="promptTextHistory"
-                order-field="createdAt"
-                :page-size="10"
-                :map-doc="mapPlayground"
-                title="Text Generation History"
-            >
+			<HistoryList
+				collection="promptTextHistory"
+				order-field="createdAt"
+				:page-size="10"
+				:map-doc="mapPlayground"
+				title="Text Generation History"
+			>
 				<template #item="{ item }">
-					<PromptRunCard :entry="(item as HistoryEntry)" />
+					<HistoryPromptCard :entry="(item as HistoryEntry)" />
 				</template>
-			</PaginatedList>
+			</HistoryList>
 		</div>
 		<div v-if="tab === 'vision'">
-			<PaginatedList
+			<HistoryList
 				collection="visionHistory"
 				order-field="createdAt"
 				:page-size="10"
@@ -83,7 +86,7 @@ function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHisto
 				title="Image Vision History"
 			>
 				<template #item="{ item }">
-					<SimpleHistoryCard
+					<HistorySimpleCard
 						:title="item.prompt ? 'Prompt' : 'Vision Result'"
 						:meta="`Model: ${item.model}`"
 						:subtitle="new Date(item.at).toLocaleString()"
@@ -91,10 +94,10 @@ function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHisto
 						:body="item.text"
 					/>
 				</template>
-			</PaginatedList>
+			</HistoryList>
 		</div>
 		<div v-if="tab === 'stt'">
-			<PaginatedList
+			<HistoryList
 				collection="transcriptionHistory"
 				order-field="createdAt"
 				:page-size="10"
@@ -102,17 +105,17 @@ function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHisto
 				title="Speech → Text History"
 			>
 				<template #item="{ item }">
-					<SimpleHistoryCard
+					<HistorySimpleCard
 						title="Transcription"
 						:meta="`Model: ${item.model}`"
 						:subtitle="new Date(item.at).toLocaleString()"
 						:body="item.text"
 					/>
 				</template>
-			</PaginatedList>
+			</HistoryList>
 		</div>
 		<div v-if="tab === 'tts'">
-			<PaginatedList
+			<HistoryList
 				collection="ttsHistory"
 				order-field="createdAt"
 				:page-size="10"
@@ -120,17 +123,17 @@ function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHisto
 				title="Text → Speech History"
 			>
 				<template #item="{ item }">
-					<SimpleHistoryCard
+					<HistorySimpleCard
 						:title="`Voice: ${item.voice || 'default'}`"
 						:meta="`Model: ${item.model}`"
 						:subtitle="new Date(item.at).toLocaleString()"
 						:body="item.text"
 					/>
 				</template>
-			</PaginatedList>
+			</HistoryList>
 		</div>
 		<div v-if="tab === 'image'">
-			<PaginatedList
+			<HistoryList
 				collection="imageGenHistory"
 				order-field="createdAt"
 				:page-size="10"
@@ -138,14 +141,14 @@ function mapImageGen(doc: QueryDocumentSnapshot<ImageGenHistory>): ImageGenHisto
 				title="Image Generation History"
 			>
 				<template #item="{ item }">
-					<SimpleHistoryCard
+					<HistorySimpleCard
 						:title="`Size: ${item.size || 'auto'}`"
 						:meta="`Model: ${item.model}`"
 						:subtitle="new Date(item.at).toLocaleString()"
 						:body="item.prompt"
 					/>
 				</template>
-			</PaginatedList>
+			</HistoryList>
 		</div>
 	</UContainer>
 </template>
