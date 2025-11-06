@@ -2,5 +2,5 @@
 @import '@nuxt/ui';
 
 @theme static {
-	--color-primary: var(--color-emerald-600);
+	--color-primary: #e53888;
 }
