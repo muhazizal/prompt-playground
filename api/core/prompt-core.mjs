@@ -55,6 +55,7 @@ export async function chatWithTemperatures(
 
 	// Run completions for each temperature
 	const runs = []
+
 	for (const t of tempsToRun) {
 		const started = Date.now()
 		const completion = await client.chat.completions.create({
@@ -69,6 +70,7 @@ export async function chatWithTemperatures(
 			index: idx,
 			text: c?.message?.content ?? '',
 		}))
+
 		runs.push({ temperature: t, choices, usage: completion.usage || null, durationMs })
 	}
 
@@ -86,6 +88,7 @@ export function getModelContextWindow(model) {
 		'gpt-image-1': 8192,
 		'whisper-1': 8192,
 	}
+
 	return MAP[M] || 8192
 }
 
@@ -125,6 +128,7 @@ export async function summarizeMessages(
 		],
 	})
 	const summary = completion?.choices?.[0]?.message?.content || ''
+
 	return String(summary || '').trim()
 }
 
@@ -163,6 +167,7 @@ export async function visionDescribe(
 				: `data:image/png;base64,${imageBase64}`
 			: null
 	const url = imageUrl || dataUrlCandidate
+
 	if (!url) throw new Error('Missing imageUrl or imageBase64')
 
 	// Run vision model completion
@@ -184,6 +189,7 @@ export async function visionDescribe(
 	})
 	const durationMs = Date.now() - started
 	const text = completion?.choices?.[0]?.message?.content || ''
+
 	return { text, usage: completion?.usage || null, model, durationMs }
 }
 
@@ -195,12 +201,15 @@ export async function speechToTextTranscribe(
 	{ audioBase64, model = TASK_MODELS['speech-to-text'].value, language } = {}
 ) {
 	if (!audioBase64 || typeof audioBase64 !== 'string') throw new Error('Missing audioBase64')
+
 	const base64 = audioBase64.replace(/^data:[^;]+;base64,/, '')
 	const buf = Buffer.from(base64, 'base64')
 	const tmpDir = path.join(process.cwd(), 'cache')
+
 	if (!fs.existsSync(tmpDir)) {
 		fs.mkdirSync(tmpDir, { recursive: true })
 	}
+
 	const tmpPath = path.join(tmpDir, `stt-${Date.now()}.mp3`)
 	fs.writeFileSync(tmpPath, buf)
 
@@ -211,6 +220,7 @@ export async function speechToTextTranscribe(
 		language,
 	})
 	const durationMs = Date.now() - started
+
 	try {
 		fs.unlinkSync(tmpPath)
 	} catch {}
@@ -226,6 +236,7 @@ export async function textToSpeechSynthesize(
 	{ text, model = TASK_MODELS['text-to-speech'].value, voice = 'alloy', format = 'mp3' } = {}
 ) {
 	if (!text || typeof text !== 'string') throw new Error('Missing text')
+
 	const started = Date.now()
 	const audio = await client.audio.speech.create({
 		model,
@@ -236,6 +247,7 @@ export async function textToSpeechSynthesize(
 	const buffer = Buffer.from(await audio.arrayBuffer())
 	const audioBase64 = buffer.toString('base64')
 	const contentType = format === 'wav' ? 'audio/wav' : 'audio/mpeg'
+
 	return { audioBase64, contentType, model, durationMs }
 }
 
@@ -258,5 +270,6 @@ export async function imageGenerate(
 	const b64 = res?.data?.[0]?.b64_json || ''
 	const imageBase64 = typeof b64 === 'string' ? b64 : ''
 	const contentType = format === 'webp' ? 'image/webp' : 'image/png'
+
 	return { imageBase64, contentType, model, durationMs, size }
 }

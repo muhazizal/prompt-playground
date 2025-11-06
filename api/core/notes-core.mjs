@@ -129,6 +129,7 @@ function scheduleSaveSummaryCache() {
 // Create OpenAI client with API key validation
 export function getClient(apiKey) {
 	if (!apiKey) throw new Error('Missing OPENAI_API_KEY')
+
 	return new OpenAI({ apiKey })
 }
 
@@ -150,6 +151,7 @@ export function readNote(filePath) {
 		if (!filePath.startsWith(NOTES_DIR)) {
 			throw new Error('Path outside notes directory')
 		}
+
 		return fs.readFileSync(filePath, 'utf-8')
 	} catch (e) {
 		return ''
@@ -158,68 +160,95 @@ export function readNote(filePath) {
 
 // Normalize text to a simple key for matching
 function normalizeKey(str = '') {
-  return String(str || '')
-    .toLowerCase()
-    .replace(/\.md$/i, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+	return String(str || '')
+		.toLowerCase()
+		.replace(/\.md$/i, '')
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
 }
 
 // Parse phase/week patterns from arbitrary text
 export function parsePhaseWeek(text = '') {
-  const s = String(text || '').toLowerCase()
-  let m = s.match(/\bphase\s*([0-9]+)[^a-z0-9]+week\s*([0-9]+)\b/)
-  if (m) return { phase: Number(m[1]), week: Number(m[2]) }
-  m = s.match(/\bweek\s*([0-9]+)[^a-z0-9]+phase\s*([0-9]+)\b/)
-  if (m) return { phase: Number(m[2]), week: Number(m[1]) }
-  m = s.match(/\bp\s*([0-9]+)\s*w\s*([0-9]+)\b/)
-  if (m) return { phase: Number(m[1]), week: Number(m[2]) }
-  m = s.match(/\bphase\s*([0-9]+)[^a-z0-9]*wk\s*([0-9]+)\b/)
-  if (m) return { phase: Number(m[1]), week: Number(m[2]) }
-  return null
+	const s = String(text || '').toLowerCase()
+	let m = s.match(/\bphase\s*([0-9]+)[^a-z0-9]+week\s*([0-9]+)\b/)
+
+	// Match phase-week format (e.g., "phase 1 week 2")
+	if (m) return { phase: Number(m[1]), week: Number(m[2]) }
+
+	m = s.match(/\bweek\s*([0-9]+)[^a-z0-9]+phase\s*([0-9]+)\b/)
+
+	// Match week-phase format (e.g., "week 2 phase 1")
+	if (m) return { phase: Number(m[2]), week: Number(m[1]) }
+
+	m = s.match(/\bp\s*([0-9]+)\s*w\s*([0-9]+)\b/)
+
+	// Match short format (e.g., "p1w2")
+	if (m) return { phase: Number(m[1]), week: Number(m[2]) }
+
+	m = s.match(/\bphase\s*([0-9]+)[^a-z0-9]*wk\s*([0-9]+)\b/)
+
+	// Match phase-week format with "wk" (e.g., "phase 1 wk 2")
+	if (m) return { phase: Number(m[1]), week: Number(m[2]) }
+
+	return null
 }
 
 function canonicalSlugFromPW(pw) {
-  if (!pw) return null
-  const { phase, week } = pw
-  if (!phase || !week) return null
-  return `phase-${phase}-week-${week}`
+	if (!pw) return null
+
+	const { phase, week } = pw
+
+	if (!phase || !week) return null
+
+	return `phase-${phase}-week-${week}`
 }
 
 // Build slug index for note filenames
 export function buildNoteSlugIndex() {
-  const files = listNoteFiles()
-  return files.map((f) => {
-    const base = normalizeKey(f.name)
-    const pw = parsePhaseWeek(f.name)
-    const canon = canonicalSlugFromPW(pw)
-    const variants = new Set([base])
-    if (canon) variants.add(normalizeKey(canon))
-    if (pw) variants.add(normalizeKey(`p${pw.phase}w${pw.week}`))
-    return { name: f.name, path: f.path, slugs: Array.from(variants) }
-  })
+	const files = listNoteFiles()
+	return files.map((f) => {
+		const base = normalizeKey(f.name)
+		const pw = parsePhaseWeek(f.name)
+		const canon = canonicalSlugFromPW(pw)
+		const variants = new Set([base])
+
+		// Add phase-week variants if valid
+		if (canon) variants.add(normalizeKey(canon))
+
+		// Add short format variant if valid
+		if (pw) variants.add(normalizeKey(`p${pw.phase}w${pw.week}`))
+
+		return { name: f.name, path: f.path, slugs: Array.from(variants) }
+	})
 }
 
 // Find a note by query using slug index and heuristics
 export function findNoteByQuery(query = '') {
-  const idx = buildNoteSlugIndex()
-  const qKey = normalizeKey(query)
-  const pw = parsePhaseWeek(query)
-  const canon = canonicalSlugFromPW(pw)
-  const candidates = canon ? [normalizeKey(canon), normalizeKey(`p${pw.phase}w${pw.week}`), qKey] : [qKey]
-  // Exact slug match
-  for (const entry of idx) {
-    for (const c of candidates) {
-      if (entry.slugs.includes(c)) return entry
-    }
-  }
-  // Fallback: includes check on keys
-  for (const entry of idx) {
-    if (entry.slugs.some((s) => s.includes(qKey))) return entry
-    const nameKey = normalizeKey(entry.name)
-    if (nameKey.includes(qKey)) return entry
-  }
-  return null
+	const idx = buildNoteSlugIndex()
+	const qKey = normalizeKey(query)
+	const pw = parsePhaseWeek(query)
+	const canon = canonicalSlugFromPW(pw)
+	const candidates = canon
+		? [normalizeKey(canon), normalizeKey(`p${pw.phase}w${pw.week}`), qKey]
+		: [qKey]
+
+	// Exact slug match
+	for (const entry of idx) {
+		for (const c of candidates) {
+			if (entry.slugs.includes(c)) return entry
+		}
+	}
+
+	// Fallback: includes check on keys
+	for (const entry of idx) {
+		if (entry.slugs.some((s) => s.includes(qKey))) return entry
+
+		const nameKey = normalizeKey(entry.name)
+
+		if (nameKey.includes(qKey)) return entry
+	}
+
+	return null
 }
 
 // Generate SHA-1 hash for text
@@ -230,15 +259,19 @@ function sha1(str) {
 // Get cached summary if available for given text and model
 export function getCachedSummary(text, model = DEFAULT_MODEL) {
 	loadSummaryCacheFromDisk()
+
 	const key = sha1(text)
 	const entry = summaryCache.get(key) || summaryDiskCache[key]
+
 	if (entry && entry.model === model) return entry
+
 	return null
 }
 
 // Set cached summary
 export function setCachedSummary(text, model, summary, tags, usage) {
 	loadSummaryCacheFromDisk()
+
 	const key = sha1(text)
 	const entry = {
 		model: model || DEFAULT_MODEL,
@@ -246,6 +279,7 @@ export function setCachedSummary(text, model, summary, tags, usage) {
 		tags: Array.isArray(tags) ? tags : [],
 		usage: usage || null,
 	}
+
 	summaryCache.set(key, entry)
 	summaryDiskCache[key] = entry
 	scheduleSaveSummaryCache()
@@ -289,6 +323,7 @@ async function getTagEmbedding(client, tag) {
 	// Check disk cache next
 	if (embedDiskCache.tags[tag]) {
 		const vec = embedDiskCache.tags[tag]
+
 		tagEmbeddingsCache.set(tag, vec)
 		console.log(`[embeddings] tag hit (disk) tag="${tag}"`)
 
@@ -357,11 +392,14 @@ function cosineSimilarity(a = [], b = []) {
 
 // Summarize note text with tags
 export async function summarize(client, text, { model = DEFAULT_MODEL } = {}) {
-	// Return cached summary when available
+	// Check if summary is cached
 	const cached = getCachedSummary(text, model)
+
+	// Return cached summary if available
 	if (cached) {
 		return { summary: cached.summary, tags: cached.tags, usage: cached.usage, model: cached.model }
 	}
+
 	// Generate summary and tags
 	const completion = await client.chat.completions.create({
 		model,
@@ -389,6 +427,7 @@ Note:\n\n${text}`,
 	} catch {}
 
 	const usage = completion?.usage || null
+
 	// Cache the result to avoid repeat costs
 	try {
 		setCachedSummary(text, model, summary, tags, usage)
@@ -470,9 +509,11 @@ export async function evaluateSummary(client, text, summary, { model = DEFAULT_M
 
 		coverage = Math.max(0.2, Math.min(1, ratio * 1.2))
 		concision = Math.max(0.2, Math.min(1, 1 - ratio * 0.5))
+
 		// Simple formatting heuristic based on sentence count
 		const sentences = (summary.match(/[.!?]\s/g) || []).length + (summary.endsWith('.') ? 1 : 0)
 		formatting = Math.max(0.2, Math.min(1, sentences >= 2 && sentences <= 8 ? 0.8 : 0.4))
+
 		// Factuality is difficult to assess heuristically; set neutral baseline
 		factuality = 0.5
 		feedback = 'Heuristic evaluation applied due to parsing failure.'
@@ -514,8 +555,10 @@ export async function processWithConcurrency(items, limit, handler) {
 	const workers = new Array(Math.min(limit, queue.length)).fill(0).map(async () => {
 		while (queue.length) {
 			const item = queue.shift()
+
 			try {
 				const r = await handler(item)
+
 				if (r) results.push(r)
 			} catch (err) {
 				results.push({ error: err?.message || String(err) })
@@ -534,9 +577,12 @@ export async function processWithConcurrency(items, limit, handler) {
  */
 export async function semanticSearchNotes(client, query, { topK = 3 } = {}) {
 	if (!query || typeof query !== 'string') return []
+
 	const qVec = await getTextEmbedding(client, query)
 	const files = listNoteFiles()
 	const ranked = []
+
+	// Process each note file
 	for (const f of files) {
 		const text = readNote(f.path)
 		if (!text) continue
@@ -545,6 +591,9 @@ export async function semanticSearchNotes(client, query, { topK = 3 } = {}) {
 		const snippet = text.slice(0, 300).replace(/\n/g, ' ').trim()
 		ranked.push({ file: f.name, score, snippet })
 	}
+
+	// Sort results by score descending
 	ranked.sort((a, b) => b.score - a.score)
+
 	return ranked.slice(0, Math.max(1, Number(topK) || 3))
 }

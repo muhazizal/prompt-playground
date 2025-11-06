@@ -4,7 +4,6 @@ import {
 	NOTES_DIR,
 	listNoteFiles,
 	readNote,
-	summarize,
 	rankTags,
 	loadTagCandidates,
 	saveTagCandidates,
@@ -97,7 +96,9 @@ export function registerNotesRoutes(app) {
 
 				// Per-user session key for notes memory (prior summaries only)
 				const sessionId = buildSessionKey(req, { sid, defaultScope: 'notes' })
+
 				if (useMemory && reset) await clearSession(sessionId)
+
 				const CONCURRENCY = Number(process.env.NOTES_CONCURRENCY || 2)
 
 				// Validate and normalize input paths
@@ -109,6 +110,7 @@ export function registerNotesRoutes(app) {
 				// Process each note file in parallel with concurrency limit
 				const results = await processWithConcurrency(targets, CONCURRENCY, async (p) => {
 					const text = readNote(p)
+
 					if (!text) return null
 
 					// Cache short-circuit

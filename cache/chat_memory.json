@@ -225,6 +225,54 @@
     {
       "role": "assistant",
       "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Hong Kong is light rain with a temperature of 28.3°C, feels like 32.3°C, humidity at 62%, and wind speed of 32.8 kph.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=hongkong\"]}"
+    },
+    {
+      "role": "user",
+      "content": "help me to:\n- list all of available notes\n- list summary each phase in brief"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"tool-summary\",\"answer\":\"Available notes: Phase 1 Week 1, Phase 1 Week 2, Phase 1 Week 3, Phase 2 Week 1, Phase 2 Week 2, Phase 2 Week 3, Phase 2 Week 4. Summaries: Phase 1 Week 1 focuses on effective LLM prompting fundamentals; Phase 1 Week 2 notes are not available; Phase 1 Week 3 details are not available; Phase 2 Week 1 emphasizes API security measures; Phase 2 Week 2 focuses on hardening API security; Phase 2 Week 3 covers context management and memory; Phase 2 Week 4 discusses AI product thinking and optimization.\",\"sources\":[\"phase-1-week-1.md\",\"phase-1-week-2.md\",\"phase-1-week-3.md\",\"phase-2-week-1.md\",\"phase-2-week-2.md\",\"phase-2-week-3.md\",\"phase-2-week-4.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "List all notes"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Available notes: phase-1-week-1.md, phase-1-week-2.md, phase-1-week-3.md, phase-2-week-1.md, phase-2-week-2.md, phase-2-week-3.md, phase-2-week-4.md.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "List all notes"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Available notes: phase-1-week-1.md, phase-1-week-2.md, phase-1-week-3.md, phase-2-week-1.md, phase-2-week-2.md, phase-2-week-3.md, phase-2-week-4.md.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "Show titles"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Available note titles: Phase 1 Week 1, Phase 1 Week 2, Phase 1 Week 3, Phase 2 Week 1, Phase 2 Week 2, Phase 2 Week 3, Phase 2 Week 4.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "Find notes about phase 2 week 3"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Notes for Phase 2 Week 3 are available. The focus is on context management and memory, specifically designing robust context management for LLM calls and introducing lightweight memory for assistants.\",\"sources\":[\"phase-2-week-3.md\"]}"
+    },
+    {
+      "role": "user",
+      "content": "Open phase 1 week 3"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"Phase 1 Week 3 focuses on Prompt Orchestration & Evaluation, building on prompting fundamentals by orchestrating multi-sample runs, ranking outputs, enforcing formats (e.g., JSON), and measuring quality for more reliable results through structure, sampling, and lightweight evaluation.\",\"sources\":[\"phase-1-week-3.md\"]}"
     }
   ],
   "try-me": [
@@ -277,6 +325,32 @@
     {
       "role": "assistant",
       "content": "{\n  \"intent\": \"answer\",\n  \"answer\": \"The notes available are: phase-1-week-1.md, phase-1-week-2.md, phase-1-week-3.md, phase-2-week-1.md, phase-2-week-2.md, phase-2-week-3.md, phase-2-week-4.md.\",\n  \"sources\": []\n}"
+    }
+  ],
+  "::1": [
+    {
+      "role": "user",
+      "content": "help me to:\n- list all of available notes\n- list summary each phase in brief"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"intent\": \"answer\",\n  \"answer\": {\n    \"available_notes\": [\n      \"phase-1-week-1.md\",\n      \"phase-1-week-2.md\",\n      \"phase-1-week-3.md\",\n      \"phase-2-week-1.md\",\n      \"phase-2-week-2.md\",\n      \"phase-2-week-3.md\",\n      \"phase-2-week-4.md\"\n    ],\n    \"phase_summaries\": {\n      \"phase_1\": {\n        \"week_1\": \"Focuses on prompting fundamentals, covering prompt anatomy, key generation parameters, tokenization, and repeatable prompt patterns.\",\n        \"week_2\": \"Details not provided in the summary.\",\n        \"week_3\": \"Details not provided in the summary.\"\n      },\n      \"phase_2\": {\n        \"week_1\": \"Details not provided in the summary.\",\n        \"week_2\": \"Details not provided in the summary.\",\n        \"week_3\": \"Covers context management and lightweight memory for LLM calls.\",\n        \"week_4\": \"Focuses on AI product thinking, design patterns, cost optimization, and building reliable AI endpoints.\"\n      }\n    }\n  },\n  \"sources\": [\n    \"phase-1-week-1.md\",\n    \"phase-2-week-4.md\",\n    \"phase-2-week-3.md\"\n  ]\n}"
+    },
+    {
+      "role": "user",
+      "content": "help me to:\n- list all of available notes\n- list summary each phase in brief"
+    },
+    {
+      "role": "assistant",
+      "content": "{\n  \"intent\": \"answer\",\n  \"answer\": {\n    \"available_notes\": [\n      \"phase-1-week-1.md\",\n      \"phase-1-week-2.md\",\n      \"phase-1-week-3.md\",\n      \"phase-2-week-1.md\",\n      \"phase-2-week-2.md\",\n      \"phase-2-week-3.md\",\n      \"phase-2-week-4.md\"\n    ],\n    \"phases_summary\": {\n      \"phase_1\": {\n        \"week_1\": \"Focuses on prompting fundamentals, including prompt anatomy and key generation parameters.\",\n        \"week_2\": \"Details on advanced prompting techniques and strategies.\",\n        \"week_3\": \"Explores prompt evaluation and iteration methods.\"\n      },\n      \"phase_2\": {\n        \"week_1\": \"Introduces AI product thinking and the importance of user-centric design.\",\n        \"week_2\": \"Covers integration of tools and APIs for enhanced AI functionality.\",\n        \"week_3\": \"Focuses on context management and memory for improved model interactions.\",\n        \"week_4\": \"Discusses design patterns, cost optimization, and real-world debugging workflows.\"\n      }\n    }\n  },\n  \"sources\": [\n    \"phase-1-week-1.md\",\n    \"phase-1-week-2.md\",\n    \"phase-1-week-3.md\",\n    \"phase-2-week-1.md\",\n    \"phase-2-week-2.md\",\n    \"phase-2-week-3.md\",\n    \"phase-2-week-4.md\"\n  ]\n}"
+    },
+    {
+      "role": "user",
+      "content": "List all notes"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"phase-1-week-1.md, phase-1-week-2.md, phase-1-week-3.md, phase-2-week-1.md, phase-2-week-2.md, phase-2-week-3.md, phase-2-week-4.md\",\"sources\":[]}"
     }
   ]
 }

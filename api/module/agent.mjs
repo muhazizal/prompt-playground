@@ -46,6 +46,7 @@ export function registerAgentRoutes(app) {
 					},
 					{ client, debug }
 				)
+
 				res.json(result)
 			} catch (err) {
 				sendError(res, 500, 'SERVER_ERROR', err?.message || String(err))
