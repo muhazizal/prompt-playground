@@ -1,17 +1,13 @@
-import fs from 'fs'
-import path from 'path'
 import { createClient } from 'redis'
 import { get_encoding } from '@dqbd/tiktoken'
-import { CACHE_DIR } from './notes.mjs'
+import { getFirestore } from '../utils/firebase.mjs'
 
-// Persistent chat memory store (in-memory with disk sync)
-const MEMORY_FILE = path.join(CACHE_DIR, 'chat_memory.json')
+// In-memory chat memory store (fallback when Redis/Firebase unavailable)
 const sessions = new Map() // Map<sessionId, Array<{ role, content }>>
-let loaded = false
-let saveTimer = null
 
 // Optional Redis-backed store
 const USE_REDIS = String(process.env.MEMORY_STORE || '').toLowerCase() === 'redis'
+const USE_FIREBASE = String(process.env.MEMORY_STORE || '').toLowerCase() === 'firebase'
 const DEFAULT_TTL_SECONDS = Number(process.env.MEMORY_TTL_SECONDS || 86400)
 const DEFAULT_MAX_ITEMS = Number(process.env.MEMORY_MAX_ITEMS || 200)
 let redisClientPromise = null
@@ -33,61 +29,6 @@ async function getRedis() {
 		})
 
 	return redisClientPromise
-}
-
-/** Ensure cache directory exists. */
-function ensureCacheDir() {
-	if (!fs.existsSync(CACHE_DIR)) {
-		fs.mkdirSync(CACHE_DIR, { recursive: true })
-	}
-}
-
-/** Load memory from disk into in-memory sessions map. */
-export function loadMemoryFromDisk() {
-	if (loaded) return
-
-	ensureCacheDir()
-
-	if (fs.existsSync(MEMORY_FILE)) {
-		try {
-			const raw = fs.readFileSync(MEMORY_FILE, 'utf-8')
-			const disk = safeJsonParse(raw, {})
-
-			// Deserialize sessions from disk
-			for (const [key, arr] of Object.entries(disk || {})) {
-				if (Array.isArray(arr)) sessions.set(key, arr.filter(isValidMessage))
-			}
-		} catch (err) {
-			console.error('[memory] loadMemoryFromDisk error:', err?.message || String(err))
-		}
-	}
-
-	loaded = true
-}
-
-/** Debounced save scheduler (500ms). */
-function scheduleSave() {
-	if (saveTimer) clearTimeout(saveTimer)
-
-	saveTimer = setTimeout(saveMemoryToDisk, 500)
-}
-
-/** Persist sessions map to disk safely. */
-export function saveMemoryToDisk() {
-	ensureCacheDir()
-
-	const obj = {}
-
-	// Serialize sessions to disk
-	for (const [key, arr] of sessions.entries()) {
-		obj[key] = arr.slice(-200) // clamp per-session size on disk
-	}
-
-	try {
-		fs.writeFileSync(MEMORY_FILE, JSON.stringify(obj, null, 2))
-	} catch (err) {
-		console.error('[memory] saveMemoryToDisk error:', err?.message || String(err))
-	}
 }
 
 /** Validate message shape. */
@@ -116,12 +57,11 @@ export async function appendMessage(
 	msg,
 	{ maxItems = DEFAULT_MAX_ITEMS, ttlSec = DEFAULT_TTL_SECONDS } = {}
 ) {
-	loadMemoryFromDisk()
-
 	if (!isValidMessage(msg)) return
 
 	const key = String(sessionId || 'default')
 	const r = await getRedis()
+	const db = USE_FIREBASE ? await getFirestore().catch(() => null) : null
 
 	if (r) {
 		try {
@@ -137,20 +77,44 @@ export async function appendMessage(
 		}
 	}
 
+	if (db) {
+		try {
+			const msgsRef = db.collection('sessions').doc(key).collection('messages')
+			const lastSnap = await msgsRef.orderBy('seq', 'desc').limit(1).get()
+			const lastSeq = lastSnap.empty ? 0 : lastSnap.docs[0].data().seq || 0
+			const now = Date.now()
+
+			await msgsRef.add({
+				role: msg.role,
+				content: msg.content,
+				sessionId: key,
+				seq: lastSeq + 1,
+				createdAt: now,
+			})
+
+			await db
+				.collection('sessions')
+				.doc(key)
+				.set({ sessionId: key, updatedAt: now, status: 'active' }, { merge: true })
+
+			return
+		} catch (err) {
+			console.error('[memory] Firebase append error:', err?.message || String(err))
+		}
+	}
+
 	const arr = sessions.get(key) || []
 	arr.push({ role: msg.role, content: msg.content })
 	clampArraySize(arr, maxItems)
 
 	sessions.set(key, arr)
-	scheduleSave()
 }
 
 /** Get recent messages from session memory. */
 export async function getRecentMessages(sessionId, { limit = 50 } = {}) {
-	loadMemoryFromDisk()
-
 	const key = String(sessionId || 'default')
 	const r = await getRedis()
+	const db = USE_FIREBASE ? await getFirestore().catch(() => null) : null
 
 	if (r) {
 		try {
@@ -168,16 +132,36 @@ export async function getRecentMessages(sessionId, { limit = 50 } = {}) {
 		}
 	}
 
+	if (db) {
+		try {
+			const snap = await db
+				.collection('sessions')
+				.doc(key)
+				.collection('messages')
+				.orderBy('createdAt', 'desc')
+				.limit(limit)
+				.get()
+
+			const list = snap.docs.map((d) => d.data())
+			return list
+				.map((d) => ({ role: d.role, content: d.content }))
+				.filter(isValidMessage)
+				.reverse()
+		} catch (err) {
+			console.error('[memory] Firebase getRecent error:', err?.message || String(err))
+			return []
+		}
+	}
+
 	const arr = sessions.get(key) || []
 	return arr.slice(-limit)
 }
 
 /** Clear all messages in a session. */
 export async function clearSession(sessionId) {
-	loadMemoryFromDisk()
-
 	const key = String(sessionId || 'default')
 	const r = await getRedis()
+	const db = USE_FIREBASE ? await getFirestore().catch(() => null) : null
 
 	if (r) {
 		try {
@@ -189,8 +173,25 @@ export async function clearSession(sessionId) {
 		return
 	}
 
+	if (db) {
+		try {
+			const msgsRef = db.collection('sessions').doc(key).collection('messages')
+			const snap = await msgsRef.get()
+			const batch = db.batch()
+			snap.docs.forEach((doc) => batch.delete(doc.ref))
+			batch.set(
+				db.collection('sessions').doc(key),
+				{ status: 'archived', updatedAt: Date.now() },
+				{ merge: true }
+			)
+			await batch.commit()
+			return
+		} catch (err) {
+			console.error('[memory] Firebase clear error:', err?.message || String(err))
+		}
+	}
+
 	sessions.delete(key)
-	scheduleSave()
 }
 
 /** Approximate token counting for messages. */

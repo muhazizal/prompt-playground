@@ -9,9 +9,6 @@ import {
 	trimMessagesToTokenBudget,
 	serializeContextToSystem,
 } from './memory.mjs'
-import { semanticSearchNotes, listNoteFiles, readNote, findNoteByQuery } from './notes.mjs'
-import { DOCS_TOPK, DOC_CAP } from '../utils/constants.mjs'
-import { mergeDocSources } from '../utils/source.mjs'
 import { normalizeUsage, estimateCostUSD } from '../utils/usage.mjs'
 import { validateResultShape } from '../utils/llm.mjs'
 import { planTools, classifyIntent } from '../utils/planner.mjs'
@@ -66,84 +63,6 @@ async function weatherTool(query) {
 }
 
 /**
- * Docs tool using embeddings-based semantic search over local notes.
- */
-async function docsTool(client, query, { topK = DOCS_TOPK } = {}) {
-	try {
-		const results = await semanticSearchNotes(client, query || 'project overview', { topK })
-		const summary = results
-			.map((r, i) => `${i + 1}. ${r.file} (score ${r.score.toFixed(3)}): ${r.snippet}`)
-			.join('\n')
-		const sources = results.map((r) => r.file)
-
-		return { ok: true, summary, sources, results }
-	} catch (err) {
-		return {
-			ok: false,
-			summary: `Docs search error: ${err?.message || String(err)}`,
-			sources: [],
-			results: [],
-		}
-	}
-}
-
-/**
- * Docs listing tool: enumerate available notes and return names.
- */
-function docsListTool() {
-	try {
-		const files = listNoteFiles()
-		const names = files.map((f) => f.name)
-		const summary = `${names.length} notes: ${names.join(', ')}`
-		const results = names.map((n) => ({ file: n, score: 1.0, snippet: '' }))
-
-		return { ok: true, summary, sources: names, results }
-	} catch (err) {
-		return {
-			ok: false,
-			summary: `Docs list error: ${err?.message || String(err)}`,
-			sources: [],
-			results: [],
-		}
-	}
-}
-
-/**
- * Exact note match by filename or partial name.
- */
-function docsExactTool(query) {
-	try {
-		const q = String(query || '').trim()
-		const match = findNoteByQuery(q)
-
-		// Check for successful match
-		if (!match)
-			return { ok: false, summary: `No exact note match for "${query}"`, sources: [], results: [] }
-
-		// Read note content
-		const text = readNote(match.path)
-		const snippet = String(text || '')
-			.slice(0, 300)
-			.replace(/\n/g, ' ')
-			.trim()
-
-		return {
-			ok: true,
-			summary: `Exact match: ${match.name}`,
-			sources: [match.name],
-			results: [{ file: match.name, score: 1.0, snippet }],
-		}
-	} catch (err) {
-		return {
-			ok: false,
-			summary: `Docs exact error: ${err?.message || String(err)}`,
-			sources: [],
-			results: [],
-		}
-	}
-}
-
-/**
  * Build system instructions for the mini agent.
  */
 function buildSystemInstructions() {
@@ -190,55 +109,6 @@ function extractWeatherLocation(prompt) {
 	return clean(loc)
 }
 
-/** Extract a focused docs query segment from the prompt */
-function extractDocsQuery(prompt) {
-	// Normalize whitespace and remove leading/trailing connectors
-	const text = String(prompt || '')
-	const parts = text
-		.split(/[,.;!?]|\band\b|\bthen\b|\bbut\b|\bplease\b/i)
-		.map((s) => s.trim())
-		.filter(Boolean)
-
-	// Find first part that matches a docs keyword
-	const idx = parts.findIndex((p) =>
-		/\b(note|notes|week|phase|doc|docs|project|agent|embedding|prompt|summarize|summary)\b/i.test(p)
-	)
-
-	// Return first part that matches a docs keyword
-	if (idx >= 0) return parts[idx]
-
-	// Fallback: "summarize <query>" or "summary <query>"
-	const m = text.match(/\b(?:summarize|summary)\s+([^.!?]+)/i)
-
-	// Return query part if found
-	if (m && m[1]) return m[1].trim()
-
-	return text
-}
-
-/** Extract a probable doc filename like "phase-1-week-2" (optional .md) */
-function extractDocFilename(prompt) {
-	const txt = String(prompt || '').toLowerCase()
-
-	// Try phase-week format
-	let m = txt.match(/\bphase\s*-?\s*(\d+)\b[^a-z0-9]+\bweek\s*-?\s*(\d+)\b/)
-	if (m) return `phase-${m[1]}-week-${m[2]}`
-
-	// Try week-phase format
-	m = txt.match(/\bweek\s*-?\s*(\d+)\b[^a-z0-9]+\bphase\s*-?\s*(\d+)\b/)
-	if (m) return `phase-${m[2]}-week-${m[1]}`
-
-	// Try p-w format
-	m = txt.match(/\bp\s*-?\s*(\d+)\s*-?\s*w\s*-?\s*(\d+)\b/)
-	if (m) return `phase-${m[1]}-week-${m[2]}`
-
-	// Try filename format
-	m = txt.match(/\b([a-z0-9\-]+)\.md\b/)
-	if (m) return m[1]
-
-	return null
-}
-
 /**
  * Plan and execute the weather tool based on prompt/classification.
  * Returns { weather, steps } where weather may be null.
@@ -255,45 +125,6 @@ async function planWeatherTool(prompt, classification) {
 	}
 	steps.push('tool:weather:skipped:no_location')
 	return { weather: null, steps }
-}
-
-/**
- * Plan and execute docs-related tools based on prompt/classification.
- * Returns { context, steps } where context may include docs, docsExact, docsList.
- */
-async function planDocsTools(client, prompt, classification) {
-	const steps = []
-	const context = {}
-	const dq = classification?.args?.query || extractDocsQuery(prompt)
-	const wantsList =
-		classification.intent === 'list_notes' ||
-		classification.intent === 'count_notes' ||
-		classification.intent === 'titles' ||
-		(/\b(list|count|how\s+many)\b/i.test(prompt) &&
-			/\b(note|notes|doc|docs|title|titles)\b/i.test(prompt))
-
-	const exactNameArg =
-		typeof classification?.args?.filename === 'string' ? classification.args.filename : null
-	const exactName = exactNameArg || extractDocFilename(prompt)
-
-	if (wantsList) {
-		context.docsList = docsListTool()
-		steps.push('tool:docs:list')
-	}
-
-	if (exactName) {
-		context.docsExact = docsExactTool(exactName)
-		steps.push(`tool:docs:exact:${exactName}`)
-	} else if (
-		!wantsList ||
-		classification.intent === 'search_docs' ||
-		classification.intent === 'multi'
-	) {
-		context.docs = await docsTool(client, dq, { topK: 3 })
-		steps.push(`tool:docs:${(dq || '').slice(0, 32)}`)
-	}
-
-	return { context, steps }
 }
 
 /**
@@ -316,11 +147,7 @@ async function buildMessages({ client, prompt, useMemory, sessionId, model, tool
  */
 function finalizeAnswer(normalized, toolsContext) {
 	if (!normalized.answer || !normalized.answer.trim()) {
-		const fallback =
-			(toolsContext?.docsExact?.summary && String(toolsContext.docsExact.summary)) ||
-			(toolsContext?.docs?.summary && String(toolsContext.docs.summary)) ||
-			(toolsContext?.weather?.summary && String(toolsContext.weather.summary)) ||
-			''
+		const fallback = (toolsContext?.weather?.summary && String(toolsContext.weather.summary)) || ''
 		if (fallback) normalized.answer = fallback.slice(0, 500)
 	}
 	return normalized
@@ -330,25 +157,6 @@ function finalizeAnswer(normalized, toolsContext) {
  * Assemble structured sources from tools, normalized JSON, and memory.
  */
 function assembleSources({ normalized, toolsContext, memorySummary, useMemory }) {
-	const docSources = Array.isArray(toolsContext?.docs?.results)
-		? toolsContext.docs.results.map((r) => ({
-				type: 'doc',
-				file: r.file,
-				snippet: r.snippet,
-				score: r.score,
-		  }))
-		: []
-	const docExactSources = Array.isArray(toolsContext?.docsExact?.results)
-		? toolsContext.docsExact.results.map((r) => ({
-				type: 'doc',
-				file: r.file,
-				snippet: r.snippet,
-				score: r.score,
-		  }))
-		: []
-	const docListSources = Array.isArray(toolsContext?.docsList?.results)
-		? toolsContext.docsList.results.map((r) => ({ type: 'doc', file: r.file }))
-		: []
 	const weatherSrc = toolsContext?.weather?.ok
 		? [
 				{
@@ -367,16 +175,7 @@ function assembleSources({ normalized, toolsContext, memorySummary, useMemory })
 		? normalized.sources.map((s) => (typeof s === 'string' ? { type: 'doc', file: s } : s))
 		: []
 	const memorySrc = useMemory && memorySummary ? [{ type: 'memory', snippet: memorySummary }] : []
-
-	const cappedDocSources = mergeDocSources({
-		docSources,
-		docExactSources,
-		docListSources,
-		normalizedDocStrings: normalizedStrings,
-		cap: DOC_CAP,
-	})
-
-	return [...weatherSrc, ...cappedDocSources, ...memorySrc]
+	return [...weatherSrc, ...normalizedStrings, ...memorySrc]
 }
 
 /**
@@ -390,8 +189,8 @@ export async function runAgent(
 		sessionId = 'mini-agent',
 		useMemory = true,
 		model = 'gpt-4o-mini',
-		temperature = 0.2,
-		maxTokens = 400,
+		temperature = 0.5,
+		maxTokens = 1000,
 	} = {},
 	{ client: clientOverride, debug = false } = {}
 ) {
@@ -401,7 +200,7 @@ export async function runAgent(
 	// Tools
 	const steps = ['init']
 	const toolsContext = {}
-	const { wantsWeather: hw, wantsDocs: hd } = planTools(prompt)
+	const { wantsWeather: hw } = planTools(prompt)
 
 	// Classify intent via LLM to augment heuristic planning
 	const classification = await classifyIntent(client, prompt)
@@ -409,28 +208,12 @@ export async function runAgent(
 
 	// Plan tools
 	const wantsWeather = hw || classification.intent === 'weather'
-	const wantsDocs =
-		hd ||
-		classification.intent === 'list_notes' ||
-		classification.intent === 'count_notes' ||
-		classification.intent === 'titles' ||
-		classification.intent === 'find_note' ||
-		classification.intent === 'summarize_note' ||
-		classification.intent === 'search_docs' ||
-		classification.intent === 'multi'
 
 	// Plan weather tool
 	if (wantsWeather) {
 		const { weather, steps: ws } = await planWeatherTool(prompt, classification)
 		if (weather) toolsContext.weather = weather
 		steps.push(...ws)
-	}
-
-	// Plan docs tools
-	if (wantsDocs) {
-		const { context: dctx, steps: ds } = await planDocsTools(client, prompt, classification)
-		Object.assign(toolsContext, dctx)
-		steps.push(...ds)
 	}
 
 	steps.push('tools:done')
@@ -466,8 +249,6 @@ export async function runAgent(
 
 	steps.push(`llm:end:${durationMs}ms`)
 
-	// normalized already finalized above
-
 	// Persist memory
 	await appendMessage(sessionId, { role: 'user', content: prompt })
 	await appendMessage(sessionId, { role: 'assistant', content: text })
@@ -489,138 +270,6 @@ export async function runAgent(
 	if (debug) {
 		result.debug = { messages, toolsContext, validationErrors: errors }
 	}
-
-	return result
-}
-
-/**
- * Stream the mini agent run via callbacks.
- * Sends step updates and partial JSON chunks during LLM streaming.
- * onEvent is called with (type, payload) where type is one of:
- * - 'step' | 'summary' | 'result' | 'usage'
- */
-export async function runAgentStream(
-	{
-		prompt,
-		sessionId = 'mini-agent',
-		useMemory = true,
-		model = 'gpt-4o-mini',
-		temperature = 0.2,
-		maxTokens = 400,
-	} = {},
-	{ client: clientOverride, debug = false, onEvent } = {}
-) {
-	if (!prompt || typeof prompt !== 'string') throw new Error('Missing prompt')
-	const client = clientOverride || getOpenAIClient(process.env.OPENAI_API_KEY)
-
-	// Tools planning
-	const steps = ['init']
-	const toolsContext = {}
-	const { wantsWeather: hw, wantsDocs: hd } = planTools(prompt)
-
-	const classification = await classifyIntent(client, prompt)
-	steps.push(`classify:${classification.intent}:${String(classification.confidence ?? 0)}`)
-	onEvent?.('step', { name: steps[steps.length - 1] })
-
-	const wantsWeather = hw || classification.intent === 'weather'
-	const wantsDocs =
-		hd ||
-		classification.intent === 'list_notes' ||
-		classification.intent === 'count_notes' ||
-		classification.intent === 'titles' ||
-		classification.intent === 'find_note' ||
-		classification.intent === 'summarize_note' ||
-		classification.intent === 'search_docs' ||
-		classification.intent === 'multi'
-
-	if (wantsWeather) {
-		const { weather, steps: ws } = await planWeatherTool(prompt, classification)
-		if (weather) toolsContext.weather = weather
-		for (const s of ws) {
-			steps.push(s)
-			onEvent?.('step', { name: s })
-		}
-	}
-
-	if (wantsDocs) {
-		const { context: dctx, steps: ds } = await planDocsTools(client, prompt, classification)
-		Object.assign(toolsContext, dctx)
-		for (const s of ds) {
-			steps.push(s)
-			onEvent?.('step', { name: s })
-		}
-	}
-
-	steps.push('tools:done')
-	onEvent?.('step', { name: 'tools:done' })
-
-	const {
-		messages,
-		memorySummary,
-		step: memStep,
-	} = await buildMessages({
-		client,
-		prompt,
-		useMemory,
-		sessionId,
-		model,
-		toolsContext,
-	})
-	steps.push(memStep)
-	onEvent?.('step', { name: memStep })
-
-	const started = Date.now()
-	const stream = await client.chat.completions.create({
-		model,
-		temperature,
-		max_tokens: maxTokens,
-		response_format: { type: 'json_object' },
-		messages,
-		stream: true,
-		stream_options: { include_usage: true },
-	})
-
-	let fullText = ''
-	let usage = null
-
-	for await (const part of stream) {
-		const chunk = part?.choices?.[0]?.delta?.content || ''
-		if (chunk) {
-			fullText += chunk
-			onEvent?.('summary', { chunk })
-		}
-		if (part?.usage) usage = part.usage
-	}
-
-	const durationMs = Date.now() - started
-	const text = fullText
-	const { normalized: rawNormalized, errors } = validateResultShape(text)
-	const normalized = finalizeAnswer(rawNormalized, toolsContext)
-
-	// Persist memory
-	await appendMessage(sessionId, { role: 'user', content: prompt })
-	await appendMessage(sessionId, { role: 'assistant', content: text })
-
-	const combinedSources = assembleSources({ normalized, toolsContext, memorySummary, useMemory })
-
-	const result = {
-		...normalized,
-		model,
-		temperature,
-		maxTokens,
-		usage,
-		durationMs,
-		sources: combinedSources,
-		costUsd: estimateCostUSD(usage || null, model),
-		steps,
-	}
-
-	if (debug) {
-		result.debug = { messages, toolsContext, validationErrors: errors }
-	}
-
-	onEvent?.('result', result)
-	if (usage) onEvent?.('usage', usage)
 
 	return result
 }

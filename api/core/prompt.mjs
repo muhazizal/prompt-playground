@@ -1,6 +1,4 @@
-import fs from 'fs'
-import path from 'path'
-import { getClient as getNotesClient, CACHE_DIR } from './notes.mjs'
+import { toFile } from 'openai'
 
 // Task-based default models
 export const TASK_MODELS = {
@@ -16,7 +14,8 @@ export const TASK_MODELS = {
  * Reuses notes helper for consistency.
  */
 export function getClient(apiKey) {
-	return getNotesClient(apiKey)
+	if (!apiKey) throw new Error('Missing OPENAI_API_KEY')
+	return new OpenAI({ apiKey })
 }
 
 /**
@@ -204,26 +203,14 @@ export async function speechToTextTranscribe(
 
 	const base64 = audioBase64.replace(/^data:[^;]+;base64,/, '')
 	const buf = Buffer.from(base64, 'base64')
-	const tmpDir = CACHE_DIR
-
-	if (!fs.existsSync(tmpDir)) {
-		fs.mkdirSync(tmpDir, { recursive: true })
-	}
-
-	const tmpPath = path.join(tmpDir, `stt-${Date.now()}.mp3`)
-	fs.writeFileSync(tmpPath, buf)
 
 	const started = Date.now()
 	const res = await client.audio.transcriptions.create({
 		model,
-		file: fs.createReadStream(tmpPath),
+		file: await toFile(buf, 'audio.mp3', { contentType: 'audio/mpeg' }),
 		language,
 	})
 	const durationMs = Date.now() - started
-
-	try {
-		fs.unlinkSync(tmpPath)
-	} catch {}
 
 	return { text: res?.text || '', model, durationMs }
 }

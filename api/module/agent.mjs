@@ -2,8 +2,7 @@ import { runAgent } from '../core/agent.mjs'
 import { getClient } from '../core/prompt.mjs'
 import { buildSessionKey } from '../core/memory.mjs'
 import { requireApiKey } from '../middleware/auth.mjs'
-import { validateBody, validateQuery } from '../middleware/validate.mjs'
-import { createStreamRateLimit } from '../middleware/rateLimit.mjs'
+import { validateBody } from '../middleware/validate.mjs'
 import { sendError } from '../utils/http.mjs'
 
 /**
@@ -33,8 +32,8 @@ export function registerAgentRoutes(app) {
 					sessionId = 'mini-agent',
 					useMemory = true,
 					model = 'gpt-4o-mini',
-					temperature = 0.2,
-					maxTokens = 400,
+					temperature = 0.5,
+					maxTokens = 10000,
 					chain = 'debug',
 				} = req.body || {}
 
@@ -57,64 +56,6 @@ export function registerAgentRoutes(app) {
 				res.json(result)
 			} catch (err) {
 				sendError(res, 500, 'SERVER_ERROR', err?.message || String(err))
-			}
-		}
-	)
-
-	// New: word-only SSE stream for typing effect
-	const streamLimiter = createStreamRateLimit({ windowMs: 5 * 60_000, max: 30 })
-	app.get(
-		'/agent/words',
-		requireApiKey(),
-		streamLimiter,
-		...validateQuery({
-			prompt: { in: ['query'], optional: false, isString: true },
-		}),
-		async (req, res) => {
-			try {
-				const client = getClient(req.aiApiKey)
-				const prompt = String(req.query.prompt || '')
-				if (!prompt.trim()) return sendError(res, 400, 'INVALID_INPUT', 'prompt must be non-empty')
-
-				// SSE headers
-				res.setHeader('Content-Type', 'text/event-stream')
-				res.setHeader('Cache-Control', 'no-cache')
-				res.setHeader('Connection', 'keep-alive')
-				res.flushHeaders && res.flushHeaders()
-
-				res.write(`event: start\n` + `data: {}\n\n`)
-
-				// Run agent with server defaults only
-				const sessionId = buildSessionKey(req, { sid: 'mini-agent' })
-				const result = await runAgent({ prompt, sessionId }, { client, debug: false })
-
-				const answerText = String(result?.answer || '')
-				const words = answerText.split(/\s+/).filter(Boolean)
-				for (const w of words) {
-					res.write(`event: word\n` + `data: ${JSON.stringify({ w })}\n\n`)
-				}
-
-				// Send final payload for metadata
-				const finalPayload = {
-					answer: result?.answer || '',
-					sources: result?.sources || [],
-					usage: result?.usage,
-					costUsd: result?.costUsd,
-					durationMs: result?.durationMs,
-				}
-				res.write(`event: end\n` + `data: ${JSON.stringify(finalPayload)}\n\n`)
-				res.end()
-			} catch (err) {
-				try {
-					res.write(
-						`event: server_error\n` +
-							`data: ${JSON.stringify({
-								error: err?.message || String(err),
-								code: 'SERVER_ERROR',
-							})}\n\n`
-					)
-					res.end()
-				} catch {}
 			}
 		}
 	)
