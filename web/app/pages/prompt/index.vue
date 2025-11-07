@@ -444,8 +444,7 @@ watch(
 		<PromptHeader />
 
 		<UCard>
-			<div class="grid gap-6">
-				<!-- Prompt Input -->
+			<div class="grid gap-8">
 				<PromptInput v-model="prompt" />
 
 				<hr class="text-gray-300" />
@@ -461,42 +460,34 @@ watch(
 
 				<hr class="text-gray-300" />
 
-				<!-- Task-specific inputs -->
-				<div class="grid gap-4">
-					<!-- Context & Memory (Text Generation only) -->
-					<TextContextPanel
-						v-if="selectedTask.task === 'text-generation'"
-						v-model:useMemory="useMemory"
-						v-model:sessionId="sessionId"
-						v-model:memorySize="memorySize"
-						v-model:contextBudgetTokens="contextBudgetTokens"
-						v-model:summarizeOverflow="summarizeOverflow"
-						v-model:summaryMaxTokens="summaryMaxTokens"
-						v-model:resetMemory="resetMemory"
-						v-model:contextJson="contextJson"
-					/>
+				<TextContextPanel
+					v-if="selectedTask.task === 'text-generation'"
+					v-model:useMemory="useMemory"
+					v-model:sessionId="sessionId"
+					v-model:memorySize="memorySize"
+					v-model:contextBudgetTokens="contextBudgetTokens"
+					v-model:summarizeOverflow="summarizeOverflow"
+					v-model:summaryMaxTokens="summaryMaxTokens"
+					v-model:resetMemory="resetMemory"
+					v-model:contextJson="contextJson"
+				/>
 
-					<VisionInputs
-						v-if="selectedTask.task === 'image-vision'"
-						v-model:imageUrl="imageUrl"
-						@changeImage="handleChangeImage"
-					/>
+				<ImageGenInputs
+					v-if="selectedTask.task === 'image-generation'"
+					:imageSizeOptions="imageSizeOptions"
+					v-model:imageSize="imageSize"
+				/>
 
-					<STTInputs
-						v-if="selectedTask.task === 'speech-to-text'"
-						@changeAudio="handleChangeAudio"
-					/>
+				<VisionInputs
+					v-if="selectedTask.task === 'image-vision'"
+					v-model:imageUrl="imageUrl"
+					@changeImage="handleChangeImage"
+				/>
 
-					<TTSInputs v-if="selectedTask.task === 'text-to-speech'" v-model:ttsVoice="ttsVoice" />
+				<STTInputs v-if="selectedTask.task === 'speech-to-text'" @changeAudio="handleChangeAudio" />
 
-					<ImageGenInputs
-						v-if="selectedTask.task === 'image-generation'"
-						:imageSizeOptions="imageSizeOptions"
-						v-model:imageSize="imageSize"
-					/>
-				</div>
+				<TTSInputs v-if="selectedTask.task === 'text-to-speech'" v-model:ttsVoice="ttsVoice" />
 
-				<!-- Run Prompt Button -->
 				<div class="flex gap-3 items-center justify-end">
 					<USwitch
 						v-if="selectedTask.task === 'text-generation'"

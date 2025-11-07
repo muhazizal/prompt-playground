@@ -29,7 +29,7 @@ const cards = [
 	<UContainer class="py-12">
 		<div class="text-center mb-10">
 			<h1 class="text-3xl font-semibold">AI Lab</h1>
-			<p class="text-gray-700 mt-2">
+			<p class="text-gray-600 mt-2">
 				Explore LLM tasks, compare outputs, and manage summaries — all in one app.
 			</p>
 		</div>

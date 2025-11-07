@@ -7,15 +7,18 @@ const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 function update(value: string) {
-  emit('update:modelValue', value)
+	emit('update:modelValue', value)
 }
 </script>
 
 <template>
-  <div class="flex flex-col w-full">
-    <span class="text-sm font-semibold">Prompt Input</span>
-    <div class="text-xs text-gray-600 mb-2 mt-1">Enter your prompt here.</div>
-    <UTextarea :model-value="props.modelValue" :rows="6" placeholder="Write your prompt here" @update:model-value="update" />
-  </div>
+	<div class="flex flex-col w-full">
+		<label class="text-sm font-semibold mb-2">Prompt Input</label>
+		<UTextarea
+			:model-value="props.modelValue"
+			:rows="6"
+			placeholder="Explain about prompt engineering"
+			@update:model-value="update"
+		/>
+	</div>
 </template>
-
