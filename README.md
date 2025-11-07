@@ -2,7 +2,7 @@
 
 An end-to-end playground for LLM prompting, multimodal experiments (vision, speech, image gen), and a unified Mini Agent that can operate over notes. Built with Nuxt 4, Vue 3, Node.js, Express and OpenAI API.
 
-- CLI demos for tokens, embeddings, and chat prompting
+- Explore tokens, embeddings, and chat via the web UI and API
 - Modular API server (prompt and agent) that proxies to OpenAI with metrics
 - Nuxt web app with a Playground and a Mini Agent, with optional Firestore history
 
@@ -10,7 +10,7 @@ An end-to-end playground for LLM prompting, multimodal experiments (vision, spee
 
 This project helps you learn and experiment with LLM fundamentals and prompt design:
 
-- Explore tokenization and embeddings from the CLI
+- Explore tokenization and embeddings via the Playground and API
 - Try multiple prompting styles and compare outputs
 - Run a local API that captures per-run latency and token usage
 - Use a web UI to compare outputs across temperatures and samples, and save runs to Firestore
@@ -21,7 +21,6 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 
 ## Project Structure
 
-- `cli.mjs` → Main CLI entry point
 - `api/` → Express API (ESM modules)
   - `server.mjs` → app bootstrap (CORS, JSON, health)
   - `prompt-core.mjs` → prompt/Chat, vision, speech, image generation, model list
@@ -34,7 +33,7 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
   - Notes UI removed; Mini Agent handles notes actions
   - `app/plugins/firebase.client.ts` → Firebase anonymous auth + Firestore
   - `app/helpers/types.ts` → shared types for results/evaluation
-- `examples/` → Sample scripts for CLI demos
+  
 
 ## Tech Stack
 
@@ -49,7 +48,7 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
   - OpenAI SDK client
   - ESM modules (`.mjs`)
 - Tooling
-  - NPM scripts for CLI, examples, API, and web dev
+  - NPM scripts for API and web dev
   - Dotenv for local configuration
   - Shared HTTP utilities for input normalization in `api/utils/http.mjs` (`toBool`, `toNum`, `safeParseJson`)
 
@@ -76,34 +75,12 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 OPENAI_API_KEY=your_key_here
 ```
 
-## CLI Usage
-
-- Help: `node cli.mjs --help`
-- Tokenization: `node cli.mjs tokens --text "Hello LLMs"` (no API key needed)
-- Chat demo: `node cli.mjs chat --mode role` (requires `OPENAI_API_KEY`)
-- Embeddings demo: `node cli.mjs embed --query "What is semantic search?"`
-
-Options:
-
-- Chat: `--mode role|iter|embed` `--model gpt-4o-mini` `--temp 0.3` `--max 100`
-- Embeddings: `--model text-embedding-3-small` `--docs "doc1|doc2|doc3"`
-- Tokens: `--tokenizer cl100k_base` `--text "..."`
-
-## Interactive Mode
-
-- Menu: `node cli.mjs interactive`
-- Auto-prompt: run any command without options to be asked for inputs
-  - Examples: `node cli.mjs tokens`, `node cli.mjs chat`, `node cli.mjs embed`, `node cli.mjs prompt`
-  - You’ll be prompted for the relevant fields (text, mode, query, template, labels, etc.)
-
 ## NPM Scripts
 
-- `npm run demo` → runs the CLI (same as `node cli.mjs`)
-- `npm run demo:interactive` → launches the interactive menu
-- `npm run demo:tokens` → `node examples/tokenization.mjs`
-- `npm run demo:chat` → `node examples/chat_prompting.mjs`
-- `npm run demo:embeddings` → `node examples/embeddings.mjs`
-- `npm run demo:prompt` → `node examples/prompt_engineering.mjs`
+- `npm run api:dev` → starts API on `http://localhost:4000/`
+- `npm run web:dev` → starts Nuxt dev on `http://localhost:3000/` (port may vary)
+- `npm run dev` → runs both API and web concurrently
+- `npm start` → alias for `npm run dev`
 
 ## Web App (Nuxt + Express)
 
@@ -359,9 +336,6 @@ curl -s -X POST http://localhost:4000/prompt/text-to-speech \
   -H 'Content-Type: application/json' \
   -d '{"text":"Hello there","voice":"alloy"}' | jq '.audioBase64 | length'
 
-# Notes: list and process
-curl -s http://localhost:4000/notes/list | jq
-curl -s -X POST http://localhost:4000/notes/process -H 'Content-Type: application/json' -d '{}' | jq
 
 # Agent: minimal run
 curl -s -X POST http://localhost:4000/agent/run \

@@ -21,8 +21,6 @@ export const DEFAULT_TAGS = [
 ]
 
 // Config and cache locations
-export const CONFIG_DIR = path.resolve(process.cwd(), 'config')
-export const TAGS_JSON = path.join(CONFIG_DIR, 'tags.json')
 export const CACHE_DIR = path.resolve(process.cwd(), 'cache')
 export const EMBED_CACHE_FILE = path.join(CACHE_DIR, 'embeddings.json')
 export const SUMMARY_CACHE_FILE = path.join(CACHE_DIR, 'summaries.json')
@@ -40,8 +38,7 @@ let summaryDiskCache = {}
 
 // Ensure config and cache directories exist
 function ensureDirs() {
-	if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true })
-	if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true })
+    if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true })
 }
 
 /** Safe JSON.parse with fallback. */
@@ -356,31 +353,14 @@ async function getTagEmbedding(client, tag) {
 
 /** Load tag candidates from disk or use default set. */
 export function loadTagCandidates() {
-	ensureDirs()
-
-	try {
-		if (fs.existsSync(TAGS_JSON)) {
-			const raw = fs.readFileSync(TAGS_JSON, 'utf-8')
-			const arr = safeJsonParse(raw, DEFAULT_TAGS)
-
-			// Validate tags array
-			if (Array.isArray(arr) && arr.every((t) => typeof t === 'string')) return arr
-		}
-	} catch {}
-
-	return DEFAULT_TAGS
+    // Use built-in defaults; disk-based tags config removed.
+    return DEFAULT_TAGS
 }
 
 /** Save tag candidates to disk with validation. */
 export function saveTagCandidates(tags = []) {
-	ensureDirs()
-
-	// Clean and validate tags
-	const clean = Array.isArray(tags)
-		? tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim())
-		: []
-
-	fs.writeFileSync(TAGS_JSON, JSON.stringify(clean, null, 2), 'utf-8')
+    // No-op: disk-based tags config removed; callers can manage tags in-memory.
+    return Array.isArray(tags) ? tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim()) : []
 }
 
 // Calculate cosine similarity between two vectors
