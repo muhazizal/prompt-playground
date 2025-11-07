@@ -79,7 +79,7 @@ console.log(
 
 - `examples/embeddings.mjs`: end‑to‑end embedding example.
 - `cache/embeddings.json`: suggested cache location for vectors.
-- `api/core/notes-core.mjs`: uses embeddings for tag similarity (see how metadata and caching are handled).
+- `api/core/notes.mjs`: uses embeddings for tag similarity (see how metadata and caching are handled).
 
 ### Testing Checklist
 

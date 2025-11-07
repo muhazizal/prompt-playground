@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { getClient as getNotesClient, CACHE_DIR } from './notes-core.mjs'
+import { getClient as getNotesClient, CACHE_DIR } from './notes.mjs'
 
 // Task-based default models
 export const TASK_MODELS = {
@@ -13,7 +13,7 @@ export const TASK_MODELS = {
 
 /**
  * Create an OpenAI client from API key.
- * Reuses notes-core helper for consistency.
+ * Reuses notes helper for consistency.
  */
 export function getClient(apiKey) {
 	return getNotesClient(apiKey)

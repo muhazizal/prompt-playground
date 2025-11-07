@@ -23,9 +23,9 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 
 - `api/` → Express API (ESM modules)
   - `server.mjs` → app bootstrap (CORS, JSON, health)
-  - `prompt-core.mjs` → prompt/Chat, vision, speech, image generation, model list
+  - `prompt.mjs` → prompt/Chat, vision, speech, image generation, model list
   - `prompt.mjs` → registers prompt endpoints (chat/models/vision/tts/stt/image-gen)
-  - `notes-core.mjs` → summarization, embeddings, evaluation, caching utilities (retained for agent tools)
+  - `notes.mjs` → summarization, embeddings, evaluation, caching utilities (retained for agent tools)
   - `module/agent.mjs` → registers agent endpoints (run + stream)
 - `web/` → Nuxt web app
   - `app/pages/index.vue` → Landing page (overview + links)
@@ -33,7 +33,6 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
   - Notes UI removed; Mini Agent handles notes actions
   - `app/plugins/firebase.client.ts` → Firebase anonymous auth + Firestore
   - `app/helpers/types.ts` → shared types for results/evaluation
-  
 
 ## Tech Stack
 
@@ -131,7 +130,7 @@ Features:
 - Save history to Firestore for: Text Gen, Vision, STT, TTS, and Image Gen (metadata only)
   - Collections: `promptTextHistory`, `visionHistory`, `transcriptionHistory`, `ttsHistory`, `imageGenHistory`
 - Mini Agent:
-  - Uses notes corpus under `notes/` via `api/core/notes-core.mjs`
+  - Uses notes corpus under `notes/` via `api/core/notes.mjs`
   - Streaming SSE route with `step`, `summary`, `result`, and `usage` events
   - Memory and context budgeting; supports embeddings retrieval over notes
 
@@ -180,7 +179,7 @@ API Endpoints:
 ## Notes
 
 - Firestore is optional. If Firebase env vars are not set, saving is skipped.
-- The API server now has modular prompt and agent routes. Notes-specific endpoints were removed; the Mini Agent uses `notes-core.mjs` internally.
+- The API server now has modular prompt and agent routes. Notes-specific endpoints were removed; the Mini Agent uses `notes.mjs` internally.
 - Embeddings caching lives in `cache/embeddings.json` and warms in-memory caches.
 - SSE streaming emits usage and evaluation after the result for better UX.
 - Large image/audio payloads are supported by increasing JSON limits (`JSON_LIMIT`, default around `5mb`). Prefer URLs for images and compressed audio to keep requests small.

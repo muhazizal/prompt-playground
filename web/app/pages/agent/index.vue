@@ -61,7 +61,7 @@ async function onRun(payload: AgentRunRequest) {
 		<div class="mb-6">
 			<h1 class="text-2xl font-semibold">Mini Agent</h1>
 			<p class="text-gray-600 text-sm">
-				Chat, weather, and semantic docs retrieval with structured output.
+				Chat, ask weather and semantic local docs retrieval with structured output.
 			</p>
 		</div>
 

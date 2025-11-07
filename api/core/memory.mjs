@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { createClient } from 'redis'
 import { get_encoding } from '@dqbd/tiktoken'
-import { CACHE_DIR } from './notes-core.mjs'
+import { CACHE_DIR } from './notes.mjs'
 
 // Persistent chat memory store (in-memory with disk sync)
 const MEMORY_FILE = path.join(CACHE_DIR, 'chat_memory.json')

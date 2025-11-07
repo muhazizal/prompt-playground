@@ -2,14 +2,14 @@ import {
 	getClient as getOpenAIClient,
 	getModelContextWindow,
 	summarizeMessages,
-} from './prompt-core.mjs'
+} from './prompt.mjs'
 import {
 	appendMessage,
 	getRecentMessages,
 	trimMessagesToTokenBudget,
 	serializeContextToSystem,
 } from './memory.mjs'
-import { semanticSearchNotes, listNoteFiles, readNote, findNoteByQuery } from './notes-core.mjs'
+import { semanticSearchNotes, listNoteFiles, readNote, findNoteByQuery } from './notes.mjs'
 import { DOCS_TOPK, DOC_CAP } from '../utils/constants.mjs'
 import { mergeDocSources } from '../utils/source.mjs'
 import { normalizeUsage, estimateCostUSD } from '../utils/usage.mjs'
