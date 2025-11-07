@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Landing page for Prompt Playground and Notes Assistant
+// Landing page for Prompt Playground and Mini Agent
 const cards = [
 	{
 		title: 'Prompt Playground',
@@ -9,15 +9,8 @@ const cards = [
 		action: 'Open Playground',
 	},
 	{
-		title: 'Notes Assistant',
-		description: 'Summarize notes with streaming and browse history with pagination.',
-		to: '/notes',
-		icon: 'i-heroicons-document-text',
-		action: 'Open Notes',
-	},
-	{
 		title: 'Mini Agent',
-		description: 'Run the agent with weather + embeddings retrieval and see steps.',
+		description: 'Unified agent with notes tools, streaming, and step insights.',
 		to: '/agent',
 		icon: 'i-heroicons-sparkles',
 		action: 'Open Agent',

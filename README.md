@@ -1,10 +1,10 @@
 # prompt-playground
 
-An end-to-end playground for LLM prompting, multimodal experiments (vision, speech, image gen), and notes summarization. Build with Nuxt 4, Vue 3, Node.js, Express and OpenAI API.
+An end-to-end playground for LLM prompting, multimodal experiments (vision, speech, image gen), and a unified Mini Agent that can operate over notes. Built with Nuxt 4, Vue 3, Node.js, Express and OpenAI API.
 
 - CLI demos for tokens, embeddings, and chat prompting
-- Modular API server (prompt and notes) that proxies to OpenAI with metrics
-- Nuxt web app with a Playground and a Notes Assistant, with optional Firestore history
+- Modular API server (prompt and agent) that proxies to OpenAI with metrics
+- Nuxt web app with a Playground and a Mini Agent, with optional Firestore history
 
 ## Overview
 
@@ -16,7 +16,7 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 - Use a web UI to compare outputs across temperatures and samples, and save runs to Firestore
 - Explore multimodal capabilities: Image Vision, Image Generation, Speech → Text, and Text → Speech
 - Manage context and session memory with budget-aware trimming and overflow summarization
-- Stream results via SSE for chat and notes summarization, including usage and evaluation events
+- Stream results via SSE for chat and agent runs, including usage and evaluation events
 - Harden the API with auth, validation, rate limiting, structured logging, and metrics
 
 ## Project Structure
@@ -26,12 +26,12 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
   - `server.mjs` → app bootstrap (CORS, JSON, health)
   - `prompt-core.mjs` → prompt/Chat, vision, speech, image generation, model list
   - `prompt.mjs` → registers prompt endpoints (chat/models/vision/tts/stt/image-gen)
-  - `notes-core.mjs` → summarization, embeddings, evaluation, caching utilities
-  - `notes.mjs` → registers notes endpoints (list/process/summarize/stream, tags)
+  - `notes-core.mjs` → summarization, embeddings, evaluation, caching utilities (retained for agent tools)
+  - `module/agent.mjs` → registers agent endpoints (run + stream)
 - `web/` → Nuxt web app
   - `app/pages/index.vue` → Landing page (overview + links)
   - `app/pages/prompt/index.vue` → Playground UI (Text, Vision, STT, TTS, Image Gen)
-  - `app/pages/notes/index.vue` → Notes Assistant UI
+  - Notes UI removed; Mini Agent handles notes actions
   - `app/plugins/firebase.client.ts` → Firebase anonymous auth + Firestore
   - `app/helpers/types.ts` → shared types for results/evaluation
 - `examples/` → Sample scripts for CLI demos
@@ -65,7 +65,6 @@ This project helps you learn and experiment with LLM fundamentals and prompt des
 - `transcriptionHistory` → Speech → Text results (`TranscriptionHistory`)
 - `ttsHistory` → Text → Speech requests (`TTSHistory`)
 - `imageGenHistory` → Image generation requests (`ImageGenHistory`)
-- `notesSummaries` → Notes summaries (`NoteResult`)
 
 ## Setup
 
@@ -105,7 +104,6 @@ Options:
 - `npm run demo:chat` → `node examples/chat_prompting.mjs`
 - `npm run demo:embeddings` → `node examples/embeddings.mjs`
 - `npm run demo:prompt` → `node examples/prompt_engineering.mjs`
-- `npm run demo:notes` → `node examples/notes_summarization.mjs`
 
 ## Web App (Nuxt + Express)
 
@@ -139,8 +137,6 @@ Environment:
 - Landing: `http://localhost:3000/`
 - Prompt Playground: `http://localhost:3000/prompt`
 - Prompt History: `http://localhost:3000/prompt/history`
-- Notes Assistant: `http://localhost:3000/notes`
-- Notes History: `http://localhost:3000/notes/history`
 - Agent: `http://localhost:3000/agent`
 
 Features:
@@ -156,13 +152,11 @@ Features:
 - Per-run latency and token usage (prompt/completion/total)
 - Dynamic `/prompt/models` list (fallback on missing API key)
 - Save history to Firestore for: Text Gen, Vision, STT, TTS, and Image Gen (metadata only)
-  - Collections: `promptTextHistory`, `visionHistory`, `transcriptionHistory`, `ttsHistory`, `imageGenHistory`, `notesSummaries`
-- Notes Assistant:
-  - Loads notes from `notes/`
-  - Batch process (`POST /notes/process`) with usage and evaluation
-  - Streaming summarize (`GET /notes/summarize-stream`) via SSE with usage and evaluation events
-  - Saves summaries per file to Firestore and lists history
-  - Tag configuration (`GET/POST /notes/tags`) stored in `config/tags.json`
+  - Collections: `promptTextHistory`, `visionHistory`, `transcriptionHistory`, `ttsHistory`, `imageGenHistory`
+- Mini Agent:
+  - Uses notes corpus under `notes/` via `api/core/notes-core.mjs`
+  - Streaming SSE route with `step`, `summary`, `result`, and `usage` events
+  - Memory and context budgeting; supports embeddings retrieval over notes
 
 API Endpoints:
 
@@ -184,13 +178,8 @@ API Endpoints:
   - Body: `{ text, model?, voice?, format? }`
   - Returns: `{ audioBase64, contentType, model, durationMs }`
 - `GET /prompt/models`
-  - Returns `{ models: Array<{ label, value }> }` from backend or fallback list
-- Notes
 
-  - `GET /notes/list` → `{ files: Array<{ name }> }`
-  - `POST /notes/process` → `{ results: Array<{ file, summary, model, tags, usage, evaluation }> }`
-  - `GET /notes/summarize-stream?path=<file>` → SSE events: `start`, `summary`, `result`, `usage`, `evaluation`, `end`, `server_error`
-  - `GET /notes/tags` / `POST /notes/tags` → load/save tag candidates
+  - Returns `{ models: Array<{ label, value }> }` from backend or fallback list
 
 - Agent
 
@@ -214,7 +203,7 @@ API Endpoints:
 ## Notes
 
 - Firestore is optional. If Firebase env vars are not set, saving is skipped.
-- The API server now has modular prompt and notes routes for clarity and maintainability.
+- The API server now has modular prompt and agent routes. Notes-specific endpoints were removed; the Mini Agent uses `notes-core.mjs` internally.
 - Embeddings caching lives in `cache/embeddings.json` and warms in-memory caches.
 - SSE streaming emits usage and evaluation after the result for better UX.
 - Large image/audio payloads are supported by increasing JSON limits (`JSON_LIMIT`, default around `5mb`). Prefer URLs for images and compressed audio to keep requests small.
@@ -238,7 +227,7 @@ Firestore guidance:
 
 ## Screenshots / Demo
 
-- Add screenshots/GIFs under `docs/` and link here (Landing, Playground, Histories, Notes).
+- Add screenshots/GIFs under `docs/` and link here (Landing, Playground, Histories, Agent).
 
 ## Documentation & Links
 

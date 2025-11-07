@@ -4,7 +4,6 @@ import dotenv from 'dotenv'
 
 import { registerMetricsRoute, createRequestCounterMiddleware } from './metrics.mjs'
 
-import { registerNotesRoutes } from './module/notes.mjs'
 import { registerPromptRoutes } from './module/prompt.mjs'
 import { registerAgentRoutes } from './module/agent.mjs'
 
@@ -45,7 +44,6 @@ function attachGlobalMiddlewares(app) {
  * @param {import('express').Express} app
  */
 function registerRoutes(app) {
-  registerNotesRoutes(app)
   registerPromptRoutes(app)
   registerAgentRoutes(app)
   registerMetricsRoute(app)

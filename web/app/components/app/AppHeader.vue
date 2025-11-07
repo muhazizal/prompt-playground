@@ -11,11 +11,6 @@ const items = computed<NavigationMenuItem[]>(() => [
 		active: route.path.includes('/prompt'),
 	},
 	{
-		label: 'Notes Assistant',
-		to: '/notes',
-		active: route.path.includes('/notes'),
-	},
-	{
 		label: 'Mini Agent',
 		to: '/agent',
 		active: route.path.includes('/agent'),
