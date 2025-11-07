@@ -82,7 +82,7 @@ const sourcesNormalized = computed<AgentSource[]>(() => {
 
 				<div v-if="sourcesNormalized.length">
 					<strong>Sources</strong>
-					<ul class="text-sm text-gray-700 space-y-2">
+					<ul class="text-sm text-gray-600 space-y-2">
 						<li
 							v-for="s in sourcesNormalized"
 							:key="(s.file || s.url || s.title || s.type) + (s.score ?? '')"
@@ -121,7 +121,7 @@ const sourcesNormalized = computed<AgentSource[]>(() => {
 				</div>
 
 				<details v-if="result.debug" class="mt-2">
-					<summary class="cursor-pointer text-sm text-gray-700">Debug</summary>
+					<summary class="cursor-pointer text-sm text-gray-600">Debug</summary>
 					<pre class="mt-2 text-xs bg-gray-50 p-3 rounded overflow-auto">{{ result.debug }}</pre>
 				</details>
 			</div>

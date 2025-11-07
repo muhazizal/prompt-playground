@@ -42,43 +42,34 @@ function onSubmit() {
 
 <template>
 	<UCard>
-		<div class="grid gap-6">
-			<div>
-				<div class="flex items-center justify-between">
-					<span class="text-sm font-semibold">Prompt Input</span>
-				</div>
-				<div class="text-xs text-gray-600 mb-2 mt-1">Enter your prompt here.</div>
+		<div class="grid gap-8">
+			<div class="flex flex-col w-full">
+				<label class="text-sm font-semibold mb-2">Prompt Input</label>
 				<UTextarea
 					v-model="form.prompt"
 					:rows="6"
-					placeholder="Write your prompt here"
+					placeholder="Explain about AI agents"
 					class="w-full"
 				/>
 			</div>
 
 			<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-				<div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-semibold">Model</span>
-					</div>
-					<div class="text-xs text-gray-600 mt-1 mb-2">Select the model to use.</div>
+				<!-- Model -->
+				<div class="flex flex-col w-full">
+					<label class="text-sm font-semibold mb-2">Model</label>
 					<USelect v-model="form.model" :items="modelOptions" class="w-full" disabled />
 				</div>
-				<div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-semibold">Temperatures</span>
+				<!-- Temperature -->
+				<div class="flex flex-col w-full">
+					<div class="flex items-center justify-between mb-2">
+						<label class="text-sm font-semibold">Temperatures</label>
 						<span class="text-xs text-gray-500">{{ form.temperature }}</span>
 					</div>
-					<div class="text-xs text-gray-600 mt-1 mb-2">Select the temperature(s) to use.</div>
 					<USelect v-model="form.temperature" :items="temperatureOptions" class="w-full" />
 				</div>
-				<div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-semibold">Max Tokens</span>
-					</div>
-					<div class="text-xs text-gray-600 mt-1 mb-2">
-						Set the max number of tokens to generate.
-					</div>
+				<!-- Max Tokens -->
+				<div class="flex flex-col w-full">
+					<label class="text-sm font-semibold mb-2">Max Tokens</label>
 					<UInput
 						v-model.number="form.maxTokens"
 						type="number"
@@ -87,25 +78,19 @@ function onSubmit() {
 						class="w-full"
 					/>
 				</div>
-				<div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-semibold">Use Memory</span>
-					</div>
-					<div class="text-xs text-gray-600 mt-1 mb-2">Persist chat history for this session.</div>
+				<!-- Use Memory -->
+				<div class="flex flex-col w-full">
+					<label class="text-sm font-semibold mb-2">Use Memory</label>
 					<USwitch v-model="form.useMemory" label="Enable memory" class="w-full" />
 				</div>
-				<div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-semibold">Chain Debug</span>
-					</div>
-					<div class="text-xs text-gray-600 mt-1 mb-2">Enable debug mode for the chain.</div>
+				<!-- Chain Debug -->
+				<div class="flex flex-col w-full">
+					<label class="text-sm font-semibold mb-2">Chain Debug</label>
 					<USwitch v-model="form.chainDebug" label="Enable chain debug" class="w-full" />
 				</div>
-				<div>
-					<div class="flex items-center justify-between">
-						<span class="text-sm font-semibold">Session ID</span>
-					</div>
-					<div class="text-xs text-gray-600 mt-1 mb-2">Unique identifier for this session.</div>
+				<!-- Session ID -->
+				<div class="flex flex-col w-full">
+					<label class="text-sm font-semibold mb-2">Session ID</label>
 					<UInput v-model="form.sessionId" placeholder="mini-agent" class="w-full" />
 				</div>
 			</div>

@@ -60,7 +60,7 @@ async function onRun(payload: AgentRunRequest) {
 	<UContainer class="py-8">
 		<div class="mb-6">
 			<h1 class="text-2xl font-semibold">Mini Agent</h1>
-			<p class="text-gray-700 text-sm">
+			<p class="text-gray-600 text-sm">
 				Chat, weather, and semantic docs retrieval with structured output.
 			</p>
 		</div>
