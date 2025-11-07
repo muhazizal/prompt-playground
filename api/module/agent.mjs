@@ -1,11 +1,10 @@
-import { runAgent, runAgentStream } from '../core/agent.mjs'
+import { runAgent } from '../core/agent.mjs'
 import { getClient } from '../core/prompt.mjs'
 import { buildSessionKey } from '../core/memory.mjs'
 import { requireApiKey } from '../middleware/auth.mjs'
 import { validateBody, validateQuery } from '../middleware/validate.mjs'
 import { createStreamRateLimit } from '../middleware/rateLimit.mjs'
 import { sendError } from '../utils/http.mjs'
-import { toBool, toNum } from '../utils/http.mjs'
 
 /**
  * Register Agent routes.
@@ -18,6 +17,7 @@ export function registerAgentRoutes(app) {
 		requireApiKey(),
 		...validateBody({
 			prompt: { in: ['body'], optional: false, isString: true },
+			// Optional client-tunable fields are intentionally ignored by web UI.
 			sessionId: { in: ['body'], optional: true, isString: true },
 			useMemory: { in: ['body'], optional: true, isBoolean: true },
 			model: { in: ['body'], optional: true, isString: true },
@@ -35,7 +35,7 @@ export function registerAgentRoutes(app) {
 					model = 'gpt-4o-mini',
 					temperature = 0.2,
 					maxTokens = 400,
-					chain,
+					chain = 'debug',
 				} = req.body || {}
 
 				// Scope session by user and request
@@ -61,34 +61,19 @@ export function registerAgentRoutes(app) {
 		}
 	)
 
-	// Streaming route for agent
+	// New: word-only SSE stream for typing effect
 	const streamLimiter = createStreamRateLimit({ windowMs: 5 * 60_000, max: 30 })
 	app.get(
-		'/agent/run/stream',
+		'/agent/words',
 		requireApiKey(),
 		streamLimiter,
 		...validateQuery({
 			prompt: { in: ['query'], optional: false, isString: true },
-			sessionId: { in: ['query'], optional: true, isString: true },
-			useMemory: { in: ['query'], optional: true, isBoolean: true },
-			model: { in: ['query'], optional: true, isString: true },
-			temperature: { in: ['query'], optional: true, isFloat: { options: { min: 0, max: 2 } } },
-			maxTokens: { in: ['query'], optional: true, isInt: { options: { min: 1, max: 4000 } } },
-			chain: { in: ['query'], optional: true, isString: true },
 		}),
 		async (req, res) => {
 			try {
 				const client = getClient(req.aiApiKey)
 				const prompt = String(req.query.prompt || '')
-				const model = String(req.query.model || 'gpt-4o-mini')
-				const temperature = toNum(req.query.temperature, 0.2)
-				const maxTokens = toNum(req.query.maxTokens, 400)
-				const useMemory = toBool(req.query.useMemory)
-				const sid = req.query.sessionId || req.headers['x-session-id']
-				const sessionId = buildSessionKey(req, { sid, defaultScope: 'mini-agent' })
-				const chain = String(req.query.chain || '').toLowerCase()
-				const debug = chain === 'debug'
-
 				if (!prompt.trim()) return sendError(res, 400, 'INVALID_INPUT', 'prompt must be non-empty')
 
 				// SSE headers
@@ -99,22 +84,25 @@ export function registerAgentRoutes(app) {
 
 				res.write(`event: start\n` + `data: {}\n\n`)
 
-				await runAgentStream(
-					{ prompt, sessionId, useMemory, model, temperature, maxTokens },
-					{
-						client,
-						debug,
-						onEvent(type, payload) {
-							const data = JSON.stringify(payload || {})
-							if (type === 'step') res.write(`event: step\n` + `data: ${data}\n\n`)
-							else if (type === 'summary') res.write(`event: summary\n` + `data: ${data}\n\n`)
-							else if (type === 'result') res.write(`event: result\n` + `data: ${data}\n\n`)
-							else if (type === 'usage') res.write(`event: usage\n` + `data: ${data}\n\n`)
-						},
-					}
-				)
+				// Run agent with server defaults only
+				const sessionId = buildSessionKey(req, { sid: 'mini-agent' })
+				const result = await runAgent({ prompt, sessionId }, { client, debug: false })
 
-				res.write(`event: end\n` + `data: {}\n\n`)
+				const answerText = String(result?.answer || '')
+				const words = answerText.split(/\s+/).filter(Boolean)
+				for (const w of words) {
+					res.write(`event: word\n` + `data: ${JSON.stringify({ w })}\n\n`)
+				}
+
+				// Send final payload for metadata
+				const finalPayload = {
+					answer: result?.answer || '',
+					sources: result?.sources || [],
+					usage: result?.usage,
+					costUsd: result?.costUsd,
+					durationMs: result?.durationMs,
+				}
+				res.write(`event: end\n` + `data: ${JSON.stringify(finalPayload)}\n\n`)
 				res.end()
 			} catch (err) {
 				try {

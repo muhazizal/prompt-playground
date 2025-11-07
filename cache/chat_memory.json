@@ -337,6 +337,54 @@
     {
       "role": "assistant",
       "content": "{\"intent\":\"answer\",\"answer\":\"Weather information for tomorrow in Yogyakarta is not available at the moment.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "weather today in Yogyakarta"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Yogyakarta is patchy rain nearby with a temperature of 29.7°C, feels like 32.8°C, humidity at 61%, and wind speed of 10.1 kph.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=Yogyakarta\"]}"
+    },
+    {
+      "role": "user",
+      "content": "weather today in Bali"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Bali is patchy rain nearby with a temperature of 28°C, feels like 31.7°C, humidity at 76%, and wind speed of 20.9 kph.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=Bali\"]}"
+    },
+    {
+      "role": "user",
+      "content": "Explain about AI Agents"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"AI agents are software programs that use artificial intelligence to perform tasks autonomously or semi-autonomously. They can process information, learn from data, and make decisions based on predefined rules or learned patterns. AI agents are used in various applications, including virtual assistants, chatbots, recommendation systems, and autonomous vehicles.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "Explain about AI Agents"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"AI agents are autonomous or semi-autonomous software programs that utilize artificial intelligence to perform tasks, make decisions, and interact with users or environments. They can learn from data, adapt to new information, and execute complex operations without human intervention.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "summarize this session chat"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"In this session, the user requested notes for Phase 2 Week 3, information about Phase 1 Week 3, current weather updates for Surakarta and Yogyakarta, a summary of Phase 1 topics, and explanations about AI agents. The user also inquired about tomorrow's weather in Yogyakarta and the weather in Bali.\",\"sources\":[]}"
+    },
+    {
+      "role": "user",
+      "content": "what is weather today in Jakarta? and give me outfit recommendation based on weather."
+    },
+    {
+      "role": "assistant",
+      "content": "{\"intent\":\"answer\",\"answer\":\"The weather in Jakarta today is partly cloudy with a temperature of 32.3°C, feels like 36°C, humidity at 67%, and wind speed of 18 kph. For this weather, I recommend wearing light, breathable clothing such as a short-sleeve shirt and shorts, along with sunglasses and a hat for sun protection.\",\"sources\":[\"http://api.weatherapi.com/v1/current.json?key=3c6609d865e846bdb4803716250611&q=Jakarta\"]}"
     }
   ],
   "try-me": [

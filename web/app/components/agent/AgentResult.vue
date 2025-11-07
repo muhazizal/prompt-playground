@@ -91,7 +91,7 @@ const sourcesNormalized = computed<AgentSource[]>(() => {
 							<span v-if="s.title">{{ s.title }}</span>
 							<span v-if="s.file">{{ s.file }}</span>
 							<span v-if="s.url">
-								· <a :href="s.url" class="text-primary-600" target="_blank">link</a></span
+								· <a :href="s.url" class="text-primary" target="_blank">link</a></span
 							>
 							<div v-if="s.snippet" class="mt-1 text-gray-600">{{ s.snippet }}</div>
 						</li>
