@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, nextTick, useTemplateRef } from 'vue'
 
 import { handleFileReader, parseContext } from '@/helpers/functions'
 import type { RunResult, HistoryEntry, TaskOption } from '@/helpers/types'
@@ -77,6 +77,15 @@ const { chat, vision, speechToText, textToSpeech, imageGeneration, models } = us
 const { streamOnce } = usePromptStream()
 const { saveText, saveVision, saveTranscription, saveTTS, saveImageGen } = usePromptSave()
 
+// Result panel ref and scroll helper to avoid manual scrolling
+const resultRef = useTemplateRef('resultRef')
+function scrollToResult() {
+	// Ensure client-side before scrolling
+	if (resultRef.value) {
+		resultRef.value.handleScrollToResult()
+	}
+}
+
 // Run a prompt and save the result to Firestore
 async function runPrompt() {
 	loading.value = true
@@ -87,6 +96,10 @@ async function runPrompt() {
 	ttsAudioUrl.value = ''
 
 	error.value = null
+
+	// Move viewport to the result panel before running
+	await nextTick()
+	scrollToResult()
 
 	try {
 		// Branch by task
@@ -158,6 +171,8 @@ async function runPrompt() {
 					}
 					outputRunPrompt.value = entry
 					await saveText(entry)
+					// Ensure result panel is visible
+					scrollToResult()
 				} else {
 					await streamPrompt()
 				}
@@ -182,6 +197,7 @@ async function runPrompt() {
 					usage: data?.usage,
 					durationMs: data?.durationMs,
 				})
+				scrollToResult()
 				break
 			}
 			case 'speech-to-text': {
@@ -196,6 +212,7 @@ async function runPrompt() {
 					model: data?.model || model.value.value,
 					durationMs: data?.durationMs,
 				})
+				scrollToResult()
 				break
 			}
 			case 'text-to-speech': {
@@ -220,6 +237,7 @@ async function runPrompt() {
 					model: data?.model || model.value.value,
 					durationMs: data?.durationMs,
 				})
+				scrollToResult()
 				break
 			}
 			case 'image-generation': {
@@ -243,9 +261,13 @@ async function runPrompt() {
 					model: data?.model || model.value.value,
 					size: imageSize.value,
 				})
+				scrollToResult()
 				break
 			}
 		}
+
+		// Final scroll to ensure the user sees results
+		scrollToResult()
 
 		toast.add({
 			title: 'Prompt run successfully',
@@ -288,6 +310,8 @@ function streamOnceWrapper(temp: number) {
 		{
 			onOpen: (t) => {
 				responseText.value = `T=${t.toFixed(2)}: `
+				// Bring result panel into view when streaming starts
+				scrollToResult()
 			},
 			onSummary: (chunk) => {
 				// Append streamed chunk to the response text in real-time
@@ -518,6 +542,7 @@ watch(
 				</div>
 
 				<PromptResultPanel
+					ref="resultRef"
 					:responseText="responseText"
 					:outputRun="outputRunPrompt"
 					:generatedImageUrl="generatedImageUrl"
