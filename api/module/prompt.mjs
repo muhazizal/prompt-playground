@@ -24,6 +24,7 @@ import {
 	countMessagesTokens,
 	serializeContextToSystem,
 	buildSessionKey,
+	setSessionSummary,
 } from '../core/memory.mjs'
 
 import { toBool, toNum } from '../utils/http.mjs'
@@ -120,6 +121,13 @@ export function registerPromptRoutes(app) {
 							summaryText = await summarizeMessages(client, overflow, {
 								model,
 								maxTokens: summaryMaxTokens,
+							})
+						} catch {}
+						// Persist the overflow summary to Firestore
+						try {
+							await setSessionSummary(sessionId, summaryText || '(compressed)', {
+								model,
+								tokens: summaryMaxTokens,
 							})
 						} catch {}
 						const summaryMsg = summaryText
@@ -244,6 +252,13 @@ export function registerPromptRoutes(app) {
 							summaryText = await summarizeMessages(client, overflow, {
 								model,
 								maxTokens: summaryMaxTokens,
+							})
+						} catch {}
+						// Persist the overflow summary to Firestore
+						try {
+							await setSessionSummary(sessionId, summaryText || '(compressed)', {
+								model,
+								tokens: summaryMaxTokens,
 							})
 						} catch {}
 						const summaryMsg = summaryText

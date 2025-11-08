@@ -1,4 +1,4 @@
-import { toFile } from 'openai'
+import OpenAI, { toFile } from 'openai'
 
 // Task-based default models
 export const TASK_MODELS = {

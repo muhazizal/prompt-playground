@@ -18,33 +18,31 @@ const emit = defineEmits<{ (e: 'copy', value: string): void }>()
 </script>
 
 <template>
-	<div class="grid gap-6">
-		<div class="flex items-center justify-between">
-			<span class="text-sm font-semibold">Response</span>
-			<UButton size="xs" icon="i-heroicons-clipboard" @click="emit('copy', props.responseText)"
-				>Copy</UButton
-			>
+	<div class="grid gap-4">
+		<div v-if="props.responseText" class="flex flex-col gap-2">
+			<div class="flex items-center justify-between">
+				<div class="text-sm font-semibold">Response</div>
+				<UButton size="xs" icon="i-heroicons-clipboard" @click="emit('copy', props.responseText)"
+					>Copy</UButton
+				>
+			</div>
+			<UTextarea :model-value="props.responseText" :autoresize="true" readonly class="w-full" />
 		</div>
-		<UTextarea :model-value="props.responseText" :rows="8" readonly />
 
 		<div v-if="props.error" class="text-red-600 text-sm">{{ props.error }}</div>
 
-		<!-- Generated Media Previews -->
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			<div v-if="props.generatedImageUrl">
-				<span class="text-sm font-semibold">Generated Image</span>
-				<img :src="props.generatedImageUrl" alt="Generated image" class="rounded border" />
-			</div>
-
-			<div v-if="props.ttsAudioUrl">
-				<span class="text-sm font-semibold">Generated Audio</span>
-				<audio :src="props.ttsAudioUrl" controls />
-			</div>
+		<div v-if="props.generatedImageUrl">
+			<div class="text-sm font-semibold mb-2">Generated Image</div>
+			<img :src="props.generatedImageUrl" alt="Generated image" class="rounded border" />
 		</div>
 
-		<!-- Run Outputs -->
+		<div v-if="props.ttsAudioUrl">
+			<div class="text-sm font-semibold mb-2">Generated Audio</div>
+			<audio :src="props.ttsAudioUrl" controls />
+		</div>
+
 		<div v-if="props.outputRun?.runs?.length">
-			<span class="text-sm font-semibold">Run Outputs</span>
+			<div class="text-sm font-semibold mb-2">Run Outputs</div>
 			<PromptOutputList :runs="props.outputRun!.runs" @copy="(t) => emit('copy', t)" />
 		</div>
 	</div>

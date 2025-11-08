@@ -252,6 +252,8 @@ async function runPrompt() {
 			description: 'Check history for details.',
 			color: 'success',
 		})
+
+		prompt.value = ''
 	} catch (e: any) {
 		error.value = e?.data?.error || e?.message || 'Request failed'
 		toast.add({
@@ -447,8 +449,6 @@ watch(
 			<div class="grid gap-8">
 				<PromptInput v-model="prompt" />
 
-				<hr class="text-gray-300" />
-
 				<PromptTaskPanel
 					v-model:selectedTask="selectedTask"
 					v-model:temperatureSelection="temperatureSelection"
@@ -457,8 +457,6 @@ watch(
 					:task-options="taskOptions"
 					:loading-models="loadingModels"
 				/>
-
-				<hr class="text-gray-300" />
 
 				<TextContextPanel
 					v-if="selectedTask.task === 'text-generation'"
@@ -506,7 +504,6 @@ watch(
 				</div>
 
 				<PromptResultPanel
-					v-if="outputRunPrompt"
 					:responseText="responseText"
 					:outputRun="outputRunPrompt"
 					:generatedImageUrl="generatedImageUrl"

@@ -27,7 +27,7 @@ const cards = [
 			</p>
 		</div>
 
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
 			<UCard v-for="c in cards" :key="c.title" class="flex flex-col">
 				<div class="flex items-start gap-3">
 					<div>

@@ -1,6 +1,7 @@
 // Mini Agent composable: chat behavior + Firestore history (single composable)
 // Provides messages/status/input/send/preloadHistory. Uses non-stream /agent/run.
 import type { AgentRunResult } from '@/helpers/types'
+import type { Ref } from 'vue'
 import {
 	addDoc,
 	collection,
@@ -59,9 +60,9 @@ export function useAgent() {
 		})
 	}
 
-	async function send() {
+	async function send(sid: string) {
 		const text = input.value.trim()
-		if (!text) return
+		if (!text || !sid) return console.warn('[agent] send: missing text or session id')
 
 		// Add user message
 		pushUserMessage(text)
@@ -76,7 +77,7 @@ export function useAgent() {
 			const res = await $fetch<AgentRunResult>('/agent/run', {
 				baseURL: config.public.apiBase,
 				method: 'POST',
-				body: { prompt: text },
+				body: { prompt: text, sessionId: sid || undefined },
 				headers: {
 					'Content-Type': 'application/json',
 					...(userId ? { 'x-user-id': userId } : {}),
@@ -94,20 +95,24 @@ export function useAgent() {
 		}
 	}
 
-	async function preloadHistory(limitCount = 20) {
+	async function preloadHistory(sid: string, limitCount = 20) {
 		try {
-			if (!db) return
+			if (!db || !userId || !sid)
+				return console.warn('[agent] preloadHistory: missing db, user id, or session id')
 
+			const sessKey = sid.startsWith(`${userId}:`) ? sid : `${userId}:${sid}`
 			const snap = await getDocs(
-				query(collection(db, 'miniAgentHistory'), orderBy('createdAt', 'desc'), limit(limitCount))
+				query(
+					collection(db, 'sessions', sessKey, 'messages'),
+					orderBy('seq', 'asc'),
+					limit(limitCount)
+				)
 			)
-			const hist = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))
-
-			hist.reverse().forEach((h) => {
-				const p = String(h.prompt || '')
-				const a = String(h.answer || '')
-				if (p) pushUserMessage(p)
-				if (a) pushAssistantMessage(a)
+			const msgs = snap.docs.map((d) => d.data() as any)
+			msgs.forEach((m) => {
+				const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+				if (m.role === 'user') pushUserMessage(text)
+				else if (m.role === 'assistant') pushAssistantMessage(text)
 			})
 		} catch (e) {
 			console.warn('[agent] preload history failed', e)

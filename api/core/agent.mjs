@@ -1,13 +1,10 @@
-import {
-	getClient as getOpenAIClient,
-	getModelContextWindow,
-	summarizeMessages,
-} from './prompt.mjs'
+import { getClient as getOpenAIClient, getModelContextWindow } from './prompt.mjs'
 import {
 	appendMessage,
 	getRecentMessages,
 	trimMessagesToTokenBudget,
 	serializeContextToSystem,
+	getSessionSummary,
 } from './memory.mjs'
 import { normalizeUsage, estimateCostUSD } from '../utils/usage.mjs'
 import { validateResultShape } from '../utils/llm.mjs'
@@ -133,7 +130,8 @@ async function planWeatherTool(prompt, classification) {
  */
 async function buildMessages({ client, prompt, useMemory, sessionId, model, toolsContext }) {
 	const recent = useMemory ? await getRecentMessages(sessionId, { limit: 20 }) : []
-	const memorySummary = recent.length > 0 ? await summarizeMessages(client, recent) : ''
+	const persistedSummary = useMemory ? await getSessionSummary(sessionId) : null
+	const memorySummary = (persistedSummary && persistedSummary.text) || ''
 	const sys = { role: 'system', content: buildSystemInstructions() }
 	const ctx = serializeContextToSystem({ memorySummary, tools: toolsContext })
 	const base = [...(useMemory ? recent : []), sys, ctx, { role: 'user', content: prompt }]

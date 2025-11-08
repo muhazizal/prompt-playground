@@ -11,7 +11,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-	<div class="grid gap-6">
+	<div class="grid gap-4">
 		<!-- Image URL -->
 		<div class="flex flex-col w-full">
 			<label class="text-sm font-semibold mb-2">Image URL</label>
