@@ -26,3 +26,20 @@ export const docsOptions = [
 	{ label: 'Phase 2 Week 3', value: 'phase-2-week-3' },
 	{ label: 'Phase 2 Week 4', value: 'phase-2-week-4' },
 ]
+
+// Available voices for TTS selection
+export const VOICE_OPTIONS = [
+	'alloy',
+	'echo',
+	'fable',
+	'onyx',
+	'nova',
+	'shimmer',
+	'coral',
+	'verse',
+	'ballad',
+	'ash',
+	'sage',
+	'marin',
+	'cedar',
+]
