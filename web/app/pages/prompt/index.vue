@@ -289,6 +289,10 @@ function streamOnceWrapper(temp: number) {
 			onOpen: (t) => {
 				responseText.value = `T=${t.toFixed(2)}: `
 			},
+			onSummary: (chunk) => {
+				// Append streamed chunk to the response text in real-time
+				responseText.value += chunk
+			},
 			onResult: (text) => {
 				responseText.value = `T=${temp.toFixed(2)}: ` + text
 			},
@@ -439,6 +443,15 @@ watch(
 		}
 	}
 )
+
+watch(
+	() => useStreaming.value,
+	(streaming) => {
+		if (streaming) {
+			samples.value = 1
+		}
+	}
+)
 </script>
 
 <template>
@@ -454,6 +467,7 @@ watch(
 					v-model:temperatureSelection="temperatureSelection"
 					v-model:samples="samples"
 					v-model:maxTokens="maxTokens"
+					:use-streaming="useStreaming"
 					:task-options="taskOptions"
 					:loading-models="loadingModels"
 				/>

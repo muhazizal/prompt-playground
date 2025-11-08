@@ -14,6 +14,7 @@ const props = defineProps<{
 	temperatureSelection: Array<{ label: string; value: number }>
 	samples: number
 	maxTokens: number
+	useStreaming: boolean
 }>()
 
 const emit = defineEmits<{
@@ -70,6 +71,7 @@ const emit = defineEmits<{
 				:min="1"
 				:max="5"
 				:step="1"
+				:disabled="props.useStreaming"
 				@update:model-value="(v) => emit('update:samples', v as number)"
 			/>
 		</div>
