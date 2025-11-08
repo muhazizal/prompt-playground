@@ -1,3 +1,6 @@
+import dotenv from 'dotenv'
+dotenv.config()
+
 import { get_encoding } from '@dqbd/tiktoken'
 import { getFirestore } from '../utils/firebase.mjs'
 
