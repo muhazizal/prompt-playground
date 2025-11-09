@@ -110,7 +110,9 @@ export function usePromptApi() {
 	}
 
 	async function models(): Promise<{ models: Array<{ label: string; value: string }> }> {
-		return $fetch('/prompt/models', { baseURL })
+		return $fetch<{ models: Array<{ label: string; value: string }> }>('/prompt/models', {
+			baseURL,
+		})
 	}
 
 	return { chat, vision, speechToText, textToSpeech, imageGeneration, models }

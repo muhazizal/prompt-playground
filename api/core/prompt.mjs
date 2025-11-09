@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from 'openai'
+import { DEFAULT_SYSTEM_PROMPT } from '../utils/constants.mjs'
 
 // Task-based default models
 export const TASK_MODELS = {
@@ -45,10 +46,10 @@ export async function chatWithTemperatures(
 			: [Number(temperature)]
 
 	// Build messages with optional baseMessages (e.g., memory + system + user)
-	const defaultMessages = [
-		{ role: 'system', content: 'You are a helpful assistant.' },
-		{ role: 'user', content: prompt },
-	]
+    const defaultMessages = [
+        { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
+        { role: 'user', content: prompt },
+    ]
 	const messages =
 		Array.isArray(baseMessages) && baseMessages.length > 0 ? baseMessages : defaultMessages
 

@@ -25,9 +25,11 @@ import {
 	serializeContextToSystem,
 	buildSessionKey,
 	setSessionSummary,
+	getSessionSummary,
 } from '../core/memory.mjs'
 
 import { toBool, toNum } from '../utils/http.mjs'
+import { DEFAULT_SYSTEM_PROMPT } from '../utils/constants.mjs'
 
 /**
  * Register prompt-related API routes: /chat and /models.
@@ -95,8 +97,22 @@ export function registerPromptRoutes(app) {
 				const sessionId = buildSessionKey(req, { sid, defaultScope: 'default' })
 				if (useMemory && reset) clearSession(sessionId)
 
-				// Build messages (system + trimmed memory + user)
-				let baseMessages = [{ role: 'system', content: 'You are a helpful assistant.' }]
+				// Build messages (system + optional summary/context + trimmed memory + user)
+				let baseMessages = [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }]
+
+				// Include persisted session summary when available
+				try {
+					if (useMemory) {
+						const persistedSummary = await getSessionSummary(sessionId)
+						if (persistedSummary) {
+							baseMessages.push({
+								role: 'system',
+								content: `Conversation summary: ${persistedSummary}`,
+							})
+						}
+					}
+				} catch {}
+
 				if (context && typeof context === 'object') {
 					baseMessages.push(serializeContextToSystem(context))
 				}
@@ -112,17 +128,20 @@ export function registerPromptRoutes(app) {
 					const mem = await getRecentMessages(sessionId, { limit: memorySize })
 					const combined = [...baseMessages, ...mem]
 					const within = countMessagesTokens(combined)
+
 					if (within <= budget) {
 						baseMessages = combined
 					} else if (summarizeOverflow) {
 						const { kept, overflow } = splitMessagesByBudget(combined, budget)
 						let summaryText = ''
+
 						try {
 							summaryText = await summarizeMessages(client, overflow, {
 								model,
 								maxTokens: summaryMaxTokens,
 							})
 						} catch {}
+
 						// Persist the overflow summary to Firestore
 						try {
 							await setSessionSummary(sessionId, summaryText || '(compressed)', {
@@ -130,11 +149,13 @@ export function registerPromptRoutes(app) {
 								tokens: summaryMaxTokens,
 							})
 						} catch {}
+
 						const summaryMsg = summaryText
 							? { role: 'system', content: `Conversation summary: ${summaryText}` }
 							: { role: 'system', content: 'Conversation summary: (compressed)' }
+
 						baseMessages = [
-							kept[0] || { role: 'system', content: 'You are a helpful assistant.' },
+							kept[0] || { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
 							...kept.slice(1),
 							summaryMsg,
 						]
@@ -232,28 +253,58 @@ export function registerPromptRoutes(app) {
 
 				if (useMemory && reset) clearSession(sessionId)
 
-				// Build messages (system + trimmed memory + user)
-				let baseMessages = [{ role: 'system', content: 'You are a helpful assistant.' }]
+				// Build messages (system + optional summary/context + trimmed memory + user)
+				let baseMessages = [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }]
+
+				// Inject persisted session summary if available
+				try {
+					if (useMemory) {
+						const persistedSummary = await getSessionSummary(sessionId)
+						if (persistedSummary) {
+							baseMessages.push({
+								role: 'system',
+								content: `Conversation summary: ${persistedSummary}`,
+							})
+						}
+					}
+				} catch {}
+
+				// Optional client-provided context via query (JSON string)
+				let parsedContext = null
+				if (typeof req.query.context === 'string') {
+					try {
+						parsedContext = JSON.parse(req.query.context)
+					} catch {}
+				}
+
+				if (parsedContext && typeof parsedContext === 'object') {
+					baseMessages.push(serializeContextToSystem(parsedContext))
+				}
+
 				const windowTokens = getModelContextWindow(model)
 				const safety = 1000
 				const budget = Number(
 					contextBudgetTokens || Math.max(500, windowTokens - (Number(maxTokens) || 0) - safety)
 				)
+
 				if (useMemory) {
 					const mem = await getRecentMessages(sessionId, { limit: memorySize })
 					const combined = [...baseMessages, ...mem]
 					const within = countMessagesTokens(combined)
+
 					if (within <= budget) {
 						baseMessages = combined
 					} else if (summarizeOverflow) {
 						const { kept, overflow } = splitMessagesByBudget(combined, budget)
 						let summaryText = ''
+
 						try {
 							summaryText = await summarizeMessages(client, overflow, {
 								model,
 								maxTokens: summaryMaxTokens,
 							})
 						} catch {}
+
 						// Persist the overflow summary to Firestore
 						try {
 							await setSessionSummary(sessionId, summaryText || '(compressed)', {
@@ -261,11 +312,13 @@ export function registerPromptRoutes(app) {
 								tokens: summaryMaxTokens,
 							})
 						} catch {}
+
 						const summaryMsg = summaryText
 							? { role: 'system', content: `Conversation summary: ${summaryText}` }
 							: { role: 'system', content: 'Conversation summary: (compressed)' }
+
 						baseMessages = [
-							kept[0] || { role: 'system', content: 'You are a helpful assistant.' },
+							kept[0] || { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
 							...kept.slice(1),
 							summaryMsg,
 						]
@@ -300,6 +353,7 @@ export function registerPromptRoutes(app) {
 
 				res.write(`event: result\n` + `data: ${JSON.stringify({ text: fullText, model })}\n\n`)
 				if (usage) res.write(`event: usage\n` + `data: ${JSON.stringify(usage)}\n\n`)
+
 				res.write(`event: end\n` + `data: {}\n\n`)
 				res.end()
 
