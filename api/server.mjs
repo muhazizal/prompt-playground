@@ -10,6 +10,7 @@ import { registerAgentRoutes } from './module/agent.mjs'
 
 import { createLoggingMiddleware } from './middleware/logging.mjs'
 import { createRateLimitMiddleware } from './middleware/rateLimit.mjs'
+import { getFirestore } from './utils/firebase.mjs'
 
 /**
  * Attach global middlewares to the provided Express app.
@@ -69,4 +70,18 @@ registerRoutes(app)
 app.listen(PORT, () => {
 	console.log(`[api] listening on http://localhost:${PORT}`)
 	console.log(`[api] allowed origins: ${ORIGINS.join(', ')}`)
+
+	// Startup log: indicate which chat memory store is active
+	const memStore = String(process.env.MEMORY_STORE || '').toLowerCase()
+	if (memStore === 'firebase') {
+		console.log('[api] chat memory store: Firestore')
+		// Optional connectivity check
+		getFirestore()
+			.then(() => console.log('[api] Firestore initialized'))
+			.catch((err) =>
+				console.log('[api] Firestore init error:', err?.message || String(err))
+			)
+	} else {
+		console.log('[api] chat memory store: in-memory (non-persistent)')
+	}
 })
