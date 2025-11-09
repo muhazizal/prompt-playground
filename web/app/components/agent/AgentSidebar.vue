@@ -18,6 +18,10 @@ async function refresh() {
 	loading.value = true
 	sessions.value = await listSessions(100)
 	loading.value = false
+	// Auto-select the first session on initial load when none is selected
+	if (sessions.value.length && !props.selectedId) {
+		emit('select', sessions.value[0]!.id)
+	}
 }
 
 async function newChat() {
