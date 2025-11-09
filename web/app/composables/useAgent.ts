@@ -37,6 +37,37 @@ export function useAgent() {
 		msg.parts = [{ type: 'text', text }]
 	}
 
+	// Normalize Firestore message content to displayable text.
+	function normalizeContent(content: any): string {
+		// If string, attempt to parse JSON and extract `answer` field if present
+		if (typeof content === 'string') {
+			const s = content.trim()
+			if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+				try {
+					const obj = JSON.parse(s)
+					if (obj && typeof obj === 'object' && typeof (obj as any).answer === 'string') {
+						return String((obj as any).answer)
+					}
+				} catch {}
+			}
+			return content
+		}
+
+		// If object, prefer `answer`; otherwise stringify safely
+		if (content && typeof content === 'object') {
+			const ans = typeof (content as any).answer === 'string' ? (content as any).answer : null
+			if (ans) return String(ans)
+			if (Array.isArray(content)) {
+				return content
+					.map((c) => (typeof c?.text === 'string' ? c.text : JSON.stringify(c)))
+					.join(' ')
+			}
+			return JSON.stringify(content)
+		}
+
+		return String(content ?? '')
+	}
+
 	async function saveRun(promptText: string, res: AgentRunResult) {
 		if (!db) return console.warn('[agent] Firestore not initialized; skipping save')
 
@@ -110,7 +141,7 @@ export function useAgent() {
 			)
 			const msgs = snap.docs.map((d) => d.data() as any)
 			msgs.forEach((m) => {
-				const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+				const text = normalizeContent(m.content)
 				if (m.role === 'user') pushUserMessage(text)
 				else if (m.role === 'assistant') pushAssistantMessage(text)
 			})
