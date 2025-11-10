@@ -28,7 +28,6 @@ export function usePromptApi() {
 		sessionId?: string
 		reset?: boolean
 		memorySize?: number
-		summarizeOverflow?: boolean
 		summaryMaxTokens?: number
 		contextBudgetTokens?: number | null
 		headers?: Record<string, string>
@@ -47,7 +46,6 @@ export function usePromptApi() {
 				sessionId: payload.sessionId,
 				reset: payload.reset,
 				memorySize: payload.memorySize,
-				summarizeOverflow: payload.summarizeOverflow,
 				summaryMaxTokens: payload.summaryMaxTokens,
 				...(payload.contextBudgetTokens != null
 					? { contextBudgetTokens: payload.contextBudgetTokens }

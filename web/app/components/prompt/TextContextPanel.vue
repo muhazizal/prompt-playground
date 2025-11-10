@@ -8,7 +8,6 @@ const props = defineProps<{
 	sessionId: string
 	memorySize: number
 	contextBudgetTokens: number | null
-	summarizeOverflow: boolean
 	summaryMaxTokens: number
 	resetMemory: boolean
 	contextJson: string
@@ -19,7 +18,6 @@ const emit = defineEmits<{
 	(e: 'update:sessionId', v: string): void
 	(e: 'update:memorySize', v: number): void
 	(e: 'update:contextBudgetTokens', v: number | null): void
-	(e: 'update:summarizeOverflow', v: boolean): void
 	(e: 'update:summaryMaxTokens', v: number): void
 	(e: 'update:resetMemory', v: boolean): void
 	(e: 'update:contextJson', v: string): void
@@ -74,15 +72,6 @@ const emit = defineEmits<{
 					placeholder="auto"
 					class="w-full"
 					@update:model-value="(v) => emit('update:contextBudgetTokens', (v as any) ?? null)"
-				/>
-			</div>
-			<!-- Overflow Summarization -->
-			<div class="flex flex-col w-full">
-				<label class="text-sm font-semibold mb-2">Overflow Summarization</label>
-				<USwitch
-					:model-value="props.summarizeOverflow"
-					label="Enable overflow summarization"
-					@update:model-value="(v) => emit('update:summarizeOverflow', v as boolean)"
 				/>
 			</div>
 			<!-- Summary Max Tokens -->

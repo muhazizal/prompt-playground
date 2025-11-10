@@ -11,7 +11,6 @@ export interface StreamParams {
 	useMemory?: boolean
 	sessionId?: string
 	memorySize?: number
-	summarizeOverflow?: boolean
 	summaryMaxTokens?: number
 	reset?: boolean
 	contextBudgetTokens?: number | null
@@ -39,8 +38,6 @@ export function usePromptStream() {
 			if (params.useMemory != null) q.set('useMemory', String(params.useMemory))
 			if (params.sessionId) q.set('sessionId', params.sessionId)
 			if (params.memorySize != null) q.set('memorySize', String(params.memorySize))
-			if (params.summarizeOverflow != null)
-				q.set('summarizeOverflow', String(params.summarizeOverflow))
 			if (params.summaryMaxTokens != null)
 				q.set('summaryMaxTokens', String(params.summaryMaxTokens))
 			if (params.reset) q.set('reset', 'true')

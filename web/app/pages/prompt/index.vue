@@ -64,7 +64,6 @@ const useMemory = ref(true)
 const sessionId = ref('chat')
 const memorySize = ref(30)
 const contextBudgetTokens = ref<number | null>(null)
-const summarizeOverflow = ref(true)
 const summaryMaxTokens = ref(200)
 const resetMemory = ref(false)
 const contextJson = ref<string>('')
@@ -125,7 +124,6 @@ async function runPrompt() {
 						sessionId: sid,
 						reset: resetMemory.value,
 						memorySize: memorySize.value,
-						summarizeOverflow: summarizeOverflow.value,
 						summaryMaxTokens: summaryMaxTokens.value,
 					})
 					if (parsedCtx) body.context = parsedCtx
@@ -145,7 +143,6 @@ async function runPrompt() {
 						sessionId: sid,
 						reset: resetMemory.value,
 						memorySize: memorySize.value,
-						summarizeOverflow: summarizeOverflow.value,
 						summaryMaxTokens: summaryMaxTokens.value,
 						contextBudgetTokens: contextBudgetTokens.value ?? null,
 						headers: userId.value ? { 'x-user-id': userId.value } : undefined,
@@ -301,7 +298,6 @@ function streamOnceWrapper(temp: number) {
 			useMemory: useMemory.value,
 			sessionId: sid,
 			memorySize: memorySize.value,
-			summarizeOverflow: summarizeOverflow.value,
 			summaryMaxTokens: summaryMaxTokens.value,
 			reset: resetMemory.value,
 			contextBudgetTokens: contextBudgetTokens.value ?? null,
@@ -502,7 +498,6 @@ watch(
 					v-model:sessionId="sessionId"
 					v-model:memorySize="memorySize"
 					v-model:contextBudgetTokens="contextBudgetTokens"
-					v-model:summarizeOverflow="summarizeOverflow"
 					v-model:summaryMaxTokens="summaryMaxTokens"
 					v-model:resetMemory="resetMemory"
 					v-model:contextJson="contextJson"

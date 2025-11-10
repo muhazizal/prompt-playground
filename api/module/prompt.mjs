@@ -1,6 +1,5 @@
-import { getClient, getModelContextWindow, summarizeMessages } from '../core/prompt.mjs'
+import { getClient, getModelContextWindow, summarizeOverflowHeuristic } from '../core/prompt.mjs'
 import {
-	chatWithTemperatures,
 	listModels,
 	visionDescribe,
 	speechToTextTranscribe,
@@ -67,7 +66,6 @@ export function registerPromptRoutes(app) {
 				isInt: { options: { min: 128, max: 200000 } },
 			},
 			context: { in: ['body'], optional: true },
-			summarizeOverflow: { in: ['body'], optional: true, isBoolean: true },
 			summaryMaxTokens: {
 				in: ['body'],
 				optional: true,
@@ -90,32 +88,50 @@ export function registerPromptRoutes(app) {
 					memorySize = 30,
 					contextBudgetTokens,
 					context,
-					summarizeOverflow = true,
 					summaryMaxTokens = 200,
 				} = req.body || {}
 
 				const sessionId = buildSessionKey(req, { sid, defaultScope: 'default' })
 				if (useMemory && reset) clearSession(sessionId)
 
-				// Build messages (system + optional summary/context + trimmed memory + user)
-				let baseMessages = [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }]
+				// Determine temperature schedule and per-temp sample count (n)
+				const tempsToRun =
+					Array.isArray(temperatures) && temperatures.length > 0
+						? temperatures.map(Number).filter((t) => !Number.isNaN(t))
+						: [Number(temperature)]
+				const samples = Math.max(1, Number(n) || 1)
 
-				// Include persisted session summary when available
+				// Build unified system message: default + optional summary/context + generation plan
+				let sysParts = [
+					DEFAULT_SYSTEM_PROMPT,
+					'You will perform three tasks internally: (1) Detect user intent, (2) If the user message is very long, summarize key points before replying, (3) Reply clearly.',
+					`Generation plan: produce ${samples} short choices for each temperature in ${JSON.stringify(
+						tempsToRun
+					)}. Return STRICT JSON only: {"intent":string,"summary"?:string,"runs":[{"temperature":number,"choices":[{"text":string}]}]}`,
+				]
+
 				try {
 					if (useMemory) {
 						const persistedSummary = await getSessionSummary(sessionId)
-						if (persistedSummary) {
-							baseMessages.push({
-								role: 'system',
-								content: `Conversation summary: ${persistedSummary}`,
-							})
-						}
+						const summaryText =
+							typeof persistedSummary === 'string'
+								? persistedSummary
+								: persistedSummary && typeof persistedSummary.text === 'string'
+								? persistedSummary.text
+								: ''
+
+						if (summaryText) sysParts.push(`Conversation summary: ${summaryText}`)
 					}
 				} catch {}
 
 				if (context && typeof context === 'object') {
-					baseMessages.push(serializeContextToSystem(context))
+					const ctxMsg = serializeContextToSystem(context)
+					const ctxText = String(ctxMsg?.content || '')
+
+					if (ctxText) sysParts.push(ctxText)
 				}
+
+				let baseMessages = [{ role: 'system', content: sysParts.join('\n\n') }]
 
 				// Model-aware budget (window - maxTokens - safety)
 				const windowTokens = getModelContextWindow(model)
@@ -131,55 +147,81 @@ export function registerPromptRoutes(app) {
 
 					if (within <= budget) {
 						baseMessages = combined
-					} else if (summarizeOverflow) {
-						const { kept, overflow } = splitMessagesByBudget(combined, budget)
-						let summaryText = ''
-
-						try {
-							summaryText = await summarizeMessages(client, overflow, {
-								model,
-								maxTokens: summaryMaxTokens,
-							})
-						} catch {}
-
-						// Persist the overflow summary to Firestore
-						try {
-							await setSessionSummary(sessionId, summaryText || '(compressed)', {
-								model,
-								tokens: summaryMaxTokens,
-							})
-						} catch {}
-
-						const summaryMsg = summaryText
-							? { role: 'system', content: `Conversation summary: ${summaryText}` }
-							: { role: 'system', content: 'Conversation summary: (compressed)' }
-
-						baseMessages = [
-							kept[0] || { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
-							...kept.slice(1),
-							summaryMsg,
-						]
 					} else {
-						baseMessages = trimMessagesToTokenBudget(combined, budget)
+						// Compute overflow summary heuristically instead of extra LLM call
+						const { kept, overflow } = splitMessagesByBudget(combined, budget)
+						const overflowSummary = summarizeOverflowHeuristic(overflow, {
+							maxBullets: 5,
+							maxChars: summaryMaxTokens * 4,
+						})
+
+						if (overflowSummary) {
+							// Persist summary for future turns
+							try {
+								await setSessionSummary(sessionId, overflowSummary, {
+									model,
+									tokens: summaryMaxTokens,
+								})
+							} catch {}
+
+							// Inject into unified system message
+							kept[0] = kept[0] || { role: 'system', content: DEFAULT_SYSTEM_PROMPT }
+							kept[0].content = `${kept[0].content}\n\nConversation summary: ${overflowSummary}`
+						}
+						// Final clamp to ensure strict budget compliance after summary injection
+						baseMessages = trimMessagesToTokenBudget(kept, budget)
 					}
 				}
 				baseMessages.push({ role: 'user', content: String(prompt || '') })
 
-				const data = await chatWithTemperatures(client, {
-					prompt,
+				// Single LLM call that returns structured multi-temperature runs
+				const started = Date.now()
+				const completion = await client.chat.completions.create({
 					model,
+					// Use a median temperature for internal reasoning; diversity is encoded in instructions
 					temperature,
-					maxTokens,
-					n,
-					temperatures,
-					baseMessages,
+					max_tokens: Math.max(128, maxTokens),
+					response_format: { type: 'json_object' },
+					messages: baseMessages,
 				})
+				const durationMs = Date.now() - started
+				const content = completion?.choices?.[0]?.message?.content || '{}'
+
+				let parsed = null
+				try {
+					parsed = JSON.parse(content)
+				} catch {}
+				const parsedRuns = Array.isArray(parsed?.runs) ? parsed.runs : []
+
+				const runs = parsedRuns.map((r) => ({
+					temperature: Number(r?.temperature ?? temperature),
+					choices: Array.isArray(r?.choices)
+						? r.choices.map((c, idx) => ({ index: idx, text: String(c?.text || '') }))
+						: [{ index: 0, text: String(r?.text || '') }],
+					usage: completion?.usage || null,
+					durationMs,
+				}))
+
+				// Fallback when model does not return runs
+				if (runs.length === 0) {
+					const fallbackText = typeof content === 'string' ? content : ''
+					runs.push({
+						temperature: Number(temperature),
+						choices: [{ index: 0, text: fallbackText }],
+						usage: completion?.usage || null,
+						durationMs,
+					})
+				}
+
+				const data = { prompt, model, maxTokens, runs }
 
 				// Persist user + first assistant reply to memory
 				if (useMemory) {
 					await appendMessage(sessionId, { role: 'user', content: String(prompt || '') })
-					const firstText = data?.runs?.[0]?.choices?.[0]?.text ?? ''
-					if (firstText) await appendMessage(sessionId, { role: 'assistant', content: firstText })
+					const firstTextPersist = runs?.[0]?.choices?.[0]?.text ?? ''
+
+					if (firstTextPersist)
+						await appendMessage(sessionId, { role: 'assistant', content: firstTextPersist })
 				}
 				res.json(data)
 			} catch (err) {
@@ -236,7 +278,6 @@ export function registerPromptRoutes(app) {
 					req.query.contextBudgetTokens !== undefined
 						? Number(req.query.contextBudgetTokens)
 						: undefined
-				const summarizeOverflow = toBool(req.query.summarizeOverflow)
 				const summaryMaxTokens = toNum(req.query.summaryMaxTokens, 200)
 
 				if (!prompt.trim())
@@ -253,19 +294,18 @@ export function registerPromptRoutes(app) {
 
 				if (useMemory && reset) clearSession(sessionId)
 
-				// Build messages (system + optional summary/context + trimmed memory + user)
-				let baseMessages = [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }]
-
-				// Inject persisted session summary if available
+				// Build unified system message for stream: DEFAULT + optional summary + optional context
+				let sysParts = [DEFAULT_SYSTEM_PROMPT]
 				try {
 					if (useMemory) {
 						const persistedSummary = await getSessionSummary(sessionId)
-						if (persistedSummary) {
-							baseMessages.push({
-								role: 'system',
-								content: `Conversation summary: ${persistedSummary}`,
-							})
-						}
+						const summaryText =
+							typeof persistedSummary === 'string'
+								? persistedSummary
+								: persistedSummary && typeof persistedSummary.text === 'string'
+								? persistedSummary.text
+								: ''
+						if (summaryText) sysParts.push(`Conversation summary: ${summaryText}`)
 					}
 				} catch {}
 
@@ -278,8 +318,12 @@ export function registerPromptRoutes(app) {
 				}
 
 				if (parsedContext && typeof parsedContext === 'object') {
-					baseMessages.push(serializeContextToSystem(parsedContext))
+					const ctxMsg = serializeContextToSystem(parsedContext)
+					const ctxText = String(ctxMsg?.content || '')
+					if (ctxText) sysParts.push(ctxText)
 				}
+
+				let baseMessages = [{ role: 'system', content: sysParts.join('\n\n') }]
 
 				const windowTokens = getModelContextWindow(model)
 				const safety = 1000
@@ -294,36 +338,27 @@ export function registerPromptRoutes(app) {
 
 					if (within <= budget) {
 						baseMessages = combined
-					} else if (summarizeOverflow) {
-						const { kept, overflow } = splitMessagesByBudget(combined, budget)
-						let summaryText = ''
-
-						try {
-							summaryText = await summarizeMessages(client, overflow, {
-								model,
-								maxTokens: summaryMaxTokens,
-							})
-						} catch {}
-
-						// Persist the overflow summary to Firestore
-						try {
-							await setSessionSummary(sessionId, summaryText || '(compressed)', {
-								model,
-								tokens: summaryMaxTokens,
-							})
-						} catch {}
-
-						const summaryMsg = summaryText
-							? { role: 'system', content: `Conversation summary: ${summaryText}` }
-							: { role: 'system', content: 'Conversation summary: (compressed)' }
-
-						baseMessages = [
-							kept[0] || { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
-							...kept.slice(1),
-							summaryMsg,
-						]
 					} else {
-						baseMessages = trimMessagesToTokenBudget(combined, budget)
+						const { kept, overflow } = splitMessagesByBudget(combined, budget)
+						const overflowSummary = summarizeOverflowHeuristic(overflow, {
+							maxBullets: 5,
+							maxChars: summaryMaxTokens * 4,
+						})
+
+						if (overflowSummary) {
+							kept[0] = kept[0] || { role: 'system', content: DEFAULT_SYSTEM_PROMPT }
+							kept[0].content = `${kept[0].content}\n\nConversation summary: ${overflowSummary}`
+
+							// Persist summary for future turns in streaming mode as well
+							try {
+								await setSessionSummary(sessionId, overflowSummary, {
+									model,
+									tokens: summaryMaxTokens,
+								})
+							} catch {}
+						}
+						// Final clamp to ensure strict budget compliance after summary injection
+						baseMessages = trimMessagesToTokenBudget(kept, budget)
 					}
 				}
 				baseMessages.push({ role: 'user', content: prompt })
