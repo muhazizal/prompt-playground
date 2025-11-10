@@ -1,14 +1,21 @@
-import { getClient as getOpenAIClient, getModelContextWindow } from './prompt.mjs'
+import {
+	getClient as getOpenAIClient,
+	getModelContextWindow,
+	summarizeOverflowHeuristic,
+} from './prompt.mjs'
 import {
 	appendMessage,
 	getRecentMessages,
 	trimMessagesToTokenBudget,
 	serializeContextToSystem,
 	getSessionSummary,
+	splitMessagesByBudget,
+	countMessagesTokens,
+	setSessionSummary,
 } from './memory.mjs'
 import { normalizeUsage, estimateCostUSD } from '../utils/usage.mjs'
 import { validateResultShape } from '../utils/llm.mjs'
-import { planTools, classifyIntent } from '../utils/planner.mjs'
+import { planTools } from '../utils/planner.mjs'
 
 /**
  * Weather tool using WeatherAPI.com
@@ -107,14 +114,12 @@ function extractWeatherLocation(prompt) {
 }
 
 /**
- * Plan and execute the weather tool based on prompt/classification.
+ * Plan and execute the weather tool based on prompt only (heuristics).
  * Returns { weather, steps } where weather may be null.
  */
-async function planWeatherTool(prompt, classification) {
+async function planWeatherTool(prompt) {
 	const steps = []
-	const locFromCls =
-		typeof classification?.args?.location === 'string' ? classification.args.location : null
-	const loc = locFromCls || extractWeatherLocation(prompt)
+	const loc = extractWeatherLocation(prompt)
 	if (loc) {
 		const weather = await weatherTool(loc)
 		steps.push(`tool:weather:${loc}`)
@@ -128,15 +133,53 @@ async function planWeatherTool(prompt, classification) {
  * Build trimmed messages including memory and tool context.
  * Returns { messages, memorySummary, step }.
  */
-async function buildMessages({ client, prompt, useMemory, sessionId, model, toolsContext }) {
+async function buildMessages({
+	prompt,
+	useMemory,
+	sessionId,
+	model,
+	toolsContext,
+	summaryMaxTokens = 200,
+}) {
 	const recent = useMemory ? await getRecentMessages(sessionId, { limit: 20 }) : []
 	const persistedSummary = useMemory ? await getSessionSummary(sessionId) : null
 	const memorySummary = (persistedSummary && persistedSummary.text) || ''
+
+	// Unified system + optional memory summary + tools context
 	const sys = { role: 'system', content: buildSystemInstructions() }
 	const ctx = serializeContextToSystem({ memorySummary, tools: toolsContext })
-	const base = [...(useMemory ? recent : []), sys, ctx, { role: 'user', content: prompt }]
+	let base = [sys, ctx]
 	const budget = Math.floor(getModelContextWindow(model) * 0.8)
-	const messages = trimMessagesToTokenBudget(base, budget)
+
+	if (useMemory) {
+		const combined = [...base, ...recent]
+		const within = countMessagesTokens(combined)
+
+		if (within <= budget) {
+			base = combined
+		} else {
+			const { kept, overflow } = splitMessagesByBudget(combined, budget)
+			const overflowSummary = summarizeOverflowHeuristic(overflow, {
+				maxBullets: 5,
+				maxChars: summaryMaxTokens * 4,
+			})
+
+			if (overflowSummary) {
+				// Persist summary for future turns
+				try {
+					await setSessionSummary(sessionId, overflowSummary, { model, tokens: summaryMaxTokens })
+				} catch {}
+
+				// Inject summary into system message
+				kept[0] = kept[0] || { role: 'system', content: buildSystemInstructions() }
+				kept[0].content = `${kept[0].content}\n\nConversation summary: ${overflowSummary}`
+			}
+			base = trimMessagesToTokenBudget(kept, budget)
+		}
+	}
+
+	// Add user message last
+	const messages = [...base, { role: 'user', content: prompt }]
 	return { messages, memorySummary, step: `memory:msgs=${recent.length}` }
 }
 
@@ -189,6 +232,7 @@ export async function runAgent(
 		model = 'gpt-4o-mini',
 		temperature = 0.5,
 		maxTokens = 1000,
+		summaryMaxTokens = 200,
 	} = {},
 	{ client: clientOverride, debug = false } = {}
 ) {
@@ -198,18 +242,13 @@ export async function runAgent(
 	// Tools
 	const steps = ['init']
 	const toolsContext = {}
-	const { wantsWeather: hw } = planTools(prompt)
-
-	// Classify intent via LLM to augment heuristic planning
-	const classification = await classifyIntent(client, prompt)
-	steps.push(`classify:${classification.intent}:${String(classification.confidence ?? 0)}`)
-
-	// Plan tools
-	const wantsWeather = hw || classification.intent === 'weather'
+	const { wantsWeather } = planTools(prompt)
+	steps.push('intent:in-llm')
+	// Plan tools using heuristics only (no extra LLM call)
 
 	// Plan weather tool
 	if (wantsWeather) {
-		const { weather, steps: ws } = await planWeatherTool(prompt, classification)
+		const { weather, steps: ws } = await planWeatherTool(prompt)
 		if (weather) toolsContext.weather = weather
 		steps.push(...ws)
 	}
@@ -222,12 +261,12 @@ export async function runAgent(
 		memorySummary,
 		step: memStep,
 	} = await buildMessages({
-		client,
 		prompt,
 		useMemory,
 		sessionId,
 		model,
 		toolsContext,
+		summaryMaxTokens,
 	})
 	steps.push(memStep)
 
