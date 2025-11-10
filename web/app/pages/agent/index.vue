@@ -40,9 +40,15 @@ async function handleSubmit() {
 			@select="(id) => (currentSessionId = id)"
 		/>
 
-		<div class="flex-1 overflow-y-auto">
-			<UContainer class="py-8 h-full flex flex-col justify-end">
-				<UChatMessages :messages="messages" :status="status" compact>
+		<div class="flex-1">
+			<UContainer class="py-8 h-full flex flex-col justify-end max-w-[900px]">
+				<UChatMessages
+					:messages="messages"
+					:status="status"
+					should-auto-scroll
+					style="height: calc(100vh - 144px)"
+					class="overflow-auto"
+				>
 					<template #content="{ message }">
 						<div class="*:first:mt-0 *:last:mb-0 transition-transform duration-300">
 							{{ getTextFromMessage(message) }}
