@@ -20,18 +20,16 @@ import { getFirestore } from './utils/firebase.mjs'
  * @param {import('express').Express} app
  */
 function attachGlobalMiddlewares(app) {
-  // Allow multiple dev origins by default and merge with WEB_ORIGIN
-  const ORIGINS = Array.from(
-    new Set([
-      ...(process.env.WEB_ORIGIN ? process.env.WEB_ORIGIN.split(',').map((s) => s.trim()) : []),
-      'http://localhost:3000',
-      'http://localhost:3002',
-    ]),
-  )
+  // Allow multiple dev origins by default; support STRICT_CORS to only allow WEB_ORIGIN
+  const strict = String(process.env.STRICT_CORS || '').toLowerCase() === 'true'
+  const envOrigins = process.env.WEB_ORIGIN
+    ? process.env.WEB_ORIGIN.split(',').map((s) => s.trim())
+    : []
+  const ORIGINS = Array.from(new Set(strict ? envOrigins : [...envOrigins]))
 
   app.use(createLoggingMiddleware())
   app.use(createRequestCounterMiddleware())
-  app.use(cors({ origin: ORIGINS }))
+  app.use(cors({ origin: ORIGINS, optionsSuccessStatus: 200 }))
   // Increase body size limits to avoid 413 for base64 image/audio payloads
   const BODY_LIMIT = process.env.JSON_LIMIT || '5mb'
   app.use(express.json({ limit: BODY_LIMIT }))
@@ -65,8 +63,6 @@ if (process.env.NODE_ENV !== 'test') {
   const ORIGINS = Array.from(
     new Set([
       ...(process.env.WEB_ORIGIN ? process.env.WEB_ORIGIN.split(',').map((s) => s.trim()) : []),
-      'http://localhost:3000',
-      'http://localhost:3002',
     ]),
   )
   app.listen(PORT, () => {
