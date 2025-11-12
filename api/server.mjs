@@ -44,44 +44,42 @@ function attachGlobalMiddlewares(app) {
  * @param {import('express').Express} app
  */
 function registerRoutes(app) {
-	registerPromptRoutes(app)
-	registerAgentRoutes(app)
-	registerMetricsRoute(app)
+    registerPromptRoutes(app)
+    registerAgentRoutes(app)
+    registerMetricsRoute(app)
 }
 
-const app = express()
+export function createApp() {
+    const app = express()
+    attachGlobalMiddlewares(app)
+    registerRoutes(app)
+    return app
+}
+
 const PORT = process.env.PORT || 4000
 
-// Allow multiple dev origins by default and merge with WEB_ORIGIN
-const ORIGINS = Array.from(
-	new Set([
-		...(process.env.WEB_ORIGIN ? process.env.WEB_ORIGIN.split(',').map((s) => s.trim()) : []),
-		'http://localhost:3000',
-		'http://localhost:3002',
-	])
-)
-
-// Global middlewares and routes
-attachGlobalMiddlewares(app)
-registerRoutes(app)
-
-// Chat and models routes are now registered via prompt.mjs
-
-app.listen(PORT, () => {
-	console.log(`[api] listening on http://localhost:${PORT}`)
-	console.log(`[api] allowed origins: ${ORIGINS.join(', ')}`)
-
-	// Startup log: indicate which chat memory store is active
-	const memStore = String(process.env.MEMORY_STORE || '').toLowerCase()
-	if (memStore === 'firebase') {
-		console.log('[api] chat memory store: Firestore')
-		// Optional connectivity check
-		getFirestore()
-			.then(() => console.log('[api] Firestore initialized'))
-			.catch((err) =>
-				console.log('[api] Firestore init error:', err?.message || String(err))
-			)
-	} else {
-		console.log('[api] chat memory store: in-memory (non-persistent)')
-	}
-})
+if (process.env.NODE_ENV !== 'test') {
+    const app = createApp()
+    const ORIGINS = Array.from(
+        new Set([
+            ...(process.env.WEB_ORIGIN ? process.env.WEB_ORIGIN.split(',').map((s) => s.trim()) : []),
+            'http://localhost:3000',
+            'http://localhost:3002',
+        ])
+    )
+    app.listen(PORT, () => {
+        console.log(`[api] listening on http://localhost:${PORT}`)
+        console.log(`[api] allowed origins: ${ORIGINS.join(', ')}`)
+        const memStore = String(process.env.MEMORY_STORE || '').toLowerCase()
+        if (memStore === 'firebase') {
+            console.log('[api] chat memory store: Firestore')
+            getFirestore()
+                .then(() => console.log('[api] Firestore initialized'))
+                .catch((err) =>
+                    console.log('[api] Firestore init error:', err?.message || String(err))
+                )
+        } else {
+            console.log('[api] chat memory store: in-memory (non-persistent)')
+        }
+    })
+}

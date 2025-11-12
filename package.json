@@ -3,7 +3,8 @@
 		"api:dev": "node api/server.mjs",
 		"web:dev": "npm run dev --prefix web",
 		"dev": "concurrently \"npm run api:dev\" \"npm run web:dev\"",
-		"start": "npm run dev"
+		"start": "npm run dev",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@dqbd/tiktoken": "^1.0.22",
@@ -15,7 +16,11 @@
 		"express-validator": "^7.3.0",
 		"firebase-admin": "^13.6.0",
 		"openai": "^6.7.0",
-		"pino-http": "^11.0.0",
-		"pino": "^9.5.0"
+		"pino": "^9.5.0",
+		"pino-http": "^11.0.0"
+	},
+	"devDependencies": {
+		"supertest": "^6.3.3",
+		"vitest": "^4.0.8"
 	}
 }
