@@ -10,6 +10,7 @@ import {
 import { createStreamRateLimit } from '../middleware/rateLimit.mjs'
 import { validateQuery, validateBody } from '../middleware/validate.mjs'
 import { requireApiKey } from '../middleware/auth.mjs'
+import { requireJson } from '../middleware/contentType.mjs'
 
 import { sendError } from '../utils/http.mjs'
 
@@ -47,6 +48,7 @@ export function registerPromptRoutes(app) {
 	app.post(
 		'/prompt/chat',
 		requireApiKey(),
+		requireJson(),
 		...validateBody({
 			prompt: { in: ['body'], optional: false, isString: true },
 			model: { in: ['body'], optional: true, isString: true },
@@ -416,6 +418,7 @@ export function registerPromptRoutes(app) {
 	app.post(
 		'/prompt/image-generation',
 		requireApiKey(),
+		requireJson(),
 		...validateBody({
 			prompt: { in: ['body'], optional: false, isString: true },
 			model: { in: ['body'], optional: true, isString: true },
@@ -438,6 +441,7 @@ export function registerPromptRoutes(app) {
 	app.post(
 		'/prompt/vision',
 		requireApiKey(),
+		requireJson(),
 		...validateBody({
 			imageUrl: { in: ['body'], optional: true, isString: true },
 			imageBase64: { in: ['body'], optional: true, isString: true },
@@ -462,6 +466,7 @@ export function registerPromptRoutes(app) {
 	app.post(
 		'/prompt/speech-to-text',
 		requireApiKey(),
+		requireJson(),
 		...validateBody({
 			audioBase64: { in: ['body'], optional: false, isString: true },
 			model: { in: ['body'], optional: true, isString: true },
@@ -483,6 +488,7 @@ export function registerPromptRoutes(app) {
 	app.post(
 		'/prompt/text-to-speech',
 		requireApiKey(),
+		requireJson(),
 		...validateBody({
 			text: { in: ['body'], optional: false, isString: true },
 			model: { in: ['body'], optional: true, isString: true },

@@ -7,7 +7,8 @@ import { sendError } from '../utils/http.mjs'
 function getApiKey(req) {
 	const headerKey = (req.headers['x-api-key'] || '').toString().trim()
 	const envKey = (process.env.OPENAI_API_KEY || '').toString().trim()
-	return headerKey || envKey
+	const disableEnv = String(process.env.DISABLE_ENV_API_KEY || '').toLowerCase() === 'true'
+	return headerKey || (disableEnv ? '' : envKey)
 }
 
 /**
@@ -21,6 +22,7 @@ export function requireApiKey() {
 		if (!apiKey) {
 			return sendError(res, 401, 'UNAUTHORIZED', 'Missing API key', {
 				hint: 'Provide X-API-Key header or set OPENAI_API_KEY env',
+				requestId: req.id || null,
 			})
 		}
 

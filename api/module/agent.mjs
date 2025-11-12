@@ -4,6 +4,7 @@ import { buildSessionKey } from '../core/memory.mjs'
 import { requireApiKey } from '../middleware/auth.mjs'
 import { validateBody } from '../middleware/validate.mjs'
 import { sendError } from '../utils/http.mjs'
+import { requireJson } from '../middleware/contentType.mjs'
 
 /**
  * Register Agent routes.
@@ -14,6 +15,7 @@ export function registerAgentRoutes(app) {
 	app.post(
 		'/agent/run',
 		requireApiKey(),
+		requireJson(),
 		...validateBody({
 			prompt: { in: ['body'], optional: false, isString: true },
 			// Optional client-tunable fields are intentionally ignored by web UI.
