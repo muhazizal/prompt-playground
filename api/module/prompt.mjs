@@ -50,7 +50,12 @@ export function registerPromptRoutes(app) {
 		requireApiKey(),
 		requireJson(),
 		...validateBody({
-			prompt: { in: ['body'], optional: false, isString: true },
+			prompt: {
+				in: ['body'],
+				optional: false,
+				isString: true,
+				isLength: { options: { max: 10000 } },
+			},
 			model: { in: ['body'], optional: true, isString: true },
 			temperature: { in: ['body'], optional: true, isFloat: { options: { min: 0, max: 2 } } },
 			maxTokens: { in: ['body'], optional: true, isInt: { options: { min: 1, max: 4000 } } },
@@ -420,7 +425,12 @@ export function registerPromptRoutes(app) {
 		requireApiKey(),
 		requireJson(),
 		...validateBody({
-			prompt: { in: ['body'], optional: false, isString: true },
+			prompt: {
+				in: ['body'],
+				optional: false,
+				isString: true,
+				isLength: { options: { max: 4000 } },
+			},
 			model: { in: ['body'], optional: true, isString: true },
 			size: { in: ['body'], optional: true, isString: true },
 			format: { in: ['body'], optional: true, isString: true },
@@ -444,7 +454,12 @@ export function registerPromptRoutes(app) {
 		requireJson(),
 		...validateBody({
 			imageUrl: { in: ['body'], optional: true, isString: true },
-			imageBase64: { in: ['body'], optional: true, isString: true },
+			imageBase64: {
+				in: ['body'],
+				optional: true,
+				isString: true,
+				isLength: { options: { max: 5000000 } },
+			},
 			prompt: { in: ['body'], optional: true, isString: true },
 			model: { in: ['body'], optional: true, isString: true },
 			maxTokens: { in: ['body'], optional: true, isInt: { options: { min: 16, max: 4000 } } },
@@ -468,7 +483,12 @@ export function registerPromptRoutes(app) {
 		requireApiKey(),
 		requireJson(),
 		...validateBody({
-			audioBase64: { in: ['body'], optional: false, isString: true },
+			audioBase64: {
+				in: ['body'],
+				optional: false,
+				isString: true,
+				isLength: { options: { max: 10000000 } },
+			},
 			model: { in: ['body'], optional: true, isString: true },
 			language: { in: ['body'], optional: true, isString: true },
 		}),
@@ -490,7 +510,7 @@ export function registerPromptRoutes(app) {
 		requireApiKey(),
 		requireJson(),
 		...validateBody({
-			text: { in: ['body'], optional: false, isString: true },
+			text: { in: ['body'], optional: false, isString: true, isLength: { options: { max: 4000 } } },
 			model: { in: ['body'], optional: true, isString: true },
 			voice: { in: ['body'], optional: true, isString: true },
 			format: { in: ['body'], optional: true, isString: true },
