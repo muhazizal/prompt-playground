@@ -5,6 +5,7 @@ import { requireApiKey } from '../middleware/auth.mjs'
 import { validateBody } from '../middleware/validate.mjs'
 import { sendError } from '../utils/http.mjs'
 import { requireJson } from '../middleware/contentType.mjs'
+import { inc } from '../metrics.mjs'
 
 /**
  * Register Agent routes.
@@ -27,6 +28,7 @@ export function registerAgentRoutes(app) {
 			chain: { in: ['body'], optional: true, isString: true },
 		}),
 		async (req, res) => {
+			inc('agent_run_requests_total')
 			try {
 				const client = getClient(req.aiApiKey)
 				const {
@@ -54,6 +56,7 @@ export function registerAgentRoutes(app) {
 					},
 					{ client, debug }
 				)
+				inc('openai_calls_total')
 
 				res.json(result)
 			} catch (err) {

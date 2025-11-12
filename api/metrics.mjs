@@ -7,6 +7,12 @@ export const counters = {
   sse_starts_total: 0,
   openai_calls_total: 0,
   cache_hits_total: 0, // e.g., summary cache hits
+  prompt_chat_requests_total: 0,
+  prompt_vision_requests_total: 0,
+  prompt_image_generation_requests_total: 0,
+  prompt_speech_to_text_requests_total: 0,
+  prompt_text_to_speech_requests_total: 0,
+  agent_run_requests_total: 0,
 }
 
 /**

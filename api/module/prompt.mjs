@@ -80,6 +80,7 @@ export function registerPromptRoutes(app) {
 			},
 		}),
 		async (req, res) => {
+			inc('prompt_chat_requests_total')
 			try {
 				const client = getClient(req.aiApiKey)
 				const {
@@ -192,6 +193,7 @@ export function registerPromptRoutes(app) {
 					messages: baseMessages,
 				})
 				const durationMs = Date.now() - started
+				inc('openai_calls_total')
 				const content = completion?.choices?.[0]?.message?.content || '{}'
 
 				let parsed = null
@@ -384,7 +386,12 @@ export function registerPromptRoutes(app) {
 				let fullText = ''
 				let usage = null
 
+				let aborted = false
+				res.on('close', () => {
+					aborted = true
+				})
 				for await (const part of stream) {
+					if (aborted || req.aborted) break
 					const chunk = part?.choices?.[0]?.delta?.content || ''
 					if (chunk) {
 						fullText += chunk
@@ -396,8 +403,10 @@ export function registerPromptRoutes(app) {
 				res.write(`event: result\n` + `data: ${JSON.stringify({ text: fullText, model })}\n\n`)
 				if (usage) res.write(`event: usage\n` + `data: ${JSON.stringify(usage)}\n\n`)
 
-				res.write(`event: end\n` + `data: {}\n\n`)
-				res.end()
+				if (!res.writableEnded) {
+					res.write(`event: end\n` + `data: {}\n\n`)
+					res.end()
+				}
 
 				// Persist to memory after stream
 				if (useMemory) {
@@ -436,9 +445,11 @@ export function registerPromptRoutes(app) {
 			format: { in: ['body'], optional: true, isString: true },
 		}),
 		async (req, res) => {
+			inc('prompt_image_generation_requests_total')
 			try {
 				const client = getClient(req.aiApiKey)
 				const data = await imageGenerate(client, req.body || {})
+				inc('openai_calls_total')
 				res.json(data)
 			} catch (err) {
 				const msg = err?.message || String(err)
@@ -466,9 +477,11 @@ export function registerPromptRoutes(app) {
 			temperature: { in: ['body'], optional: true, isFloat: { options: { min: 0, max: 2 } } },
 		}),
 		async (req, res) => {
+			inc('prompt_vision_requests_total')
 			try {
 				const client = getClient(req.aiApiKey)
 				const data = await visionDescribe(client, req.body || {})
+				inc('openai_calls_total')
 				res.json(data)
 			} catch (err) {
 				const msg = err?.message || String(err)
@@ -493,9 +506,11 @@ export function registerPromptRoutes(app) {
 			language: { in: ['body'], optional: true, isString: true },
 		}),
 		async (req, res) => {
+			inc('prompt_speech_to_text_requests_total')
 			try {
 				const client = getClient(req.aiApiKey)
 				const data = await speechToTextTranscribe(client, req.body || {})
+				inc('openai_calls_total')
 				res.json(data)
 			} catch (err) {
 				const msg = err?.message || String(err)
@@ -516,9 +531,11 @@ export function registerPromptRoutes(app) {
 			format: { in: ['body'], optional: true, isString: true },
 		}),
 		async (req, res) => {
+			inc('prompt_text_to_speech_requests_total')
 			try {
 				const client = getClient(req.aiApiKey)
 				const data = await textToSpeechSynthesize(client, req.body || {})
+				inc('openai_calls_total')
 				res.json(data)
 			} catch (err) {
 				const msg = err?.message || String(err)
