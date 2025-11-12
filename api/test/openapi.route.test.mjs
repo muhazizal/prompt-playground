@@ -26,4 +26,11 @@ describe('OpenAPI route', () => {
     expect(res.body.components.schemas).toHaveProperty('AgentRunRequest')
     expect(res.body.components.schemas).toHaveProperty('AgentRunResult')
   })
+  it('spec includes security scheme and requestBody refs', async () => {
+    const res = await request(app).get('/openapi')
+    expect(res.status).toBe(200)
+    expect(res.body.components.securitySchemes).toHaveProperty('apiKeyHeader')
+    expect(res.body.paths['/prompt/chat'].post).toHaveProperty('requestBody')
+    expect(res.body.paths['/agent/run'].post).toHaveProperty('requestBody')
+  })
 })
