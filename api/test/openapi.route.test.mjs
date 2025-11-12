@@ -17,5 +17,13 @@ describe('OpenAPI route', () => {
     expect(res.body.paths).toHaveProperty('/prompt/chat')
     expect(res.body.paths).toHaveProperty('/agent/run')
   })
+  it('spec includes components schemas', async () => {
+    const res = await request(app).get('/openapi')
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('components')
+    expect(res.body.components.schemas).toHaveProperty('ChatRequest')
+    expect(res.body.components.schemas).toHaveProperty('ChatResponse')
+    expect(res.body.components.schemas).toHaveProperty('AgentRunRequest')
+    expect(res.body.components.schemas).toHaveProperty('AgentRunResult')
+  })
 })
-
