@@ -1,26 +1,39 @@
 {
-	"scripts": {
-		"api:dev": "node api/server.mjs",
-		"web:dev": "npm run dev --prefix web",
-		"dev": "concurrently \"npm run api:dev\" \"npm run web:dev\"",
-		"start": "npm run dev",
-		"test": "vitest run"
-	},
-	"dependencies": {
-		"@dqbd/tiktoken": "^1.0.22",
-		"concurrently": "^9.2.1",
-		"cors": "^2.8.5",
-		"dotenv": "^17.2.3",
-		"express": "^5.1.0",
-		"express-rate-limit": "^8.2.1",
-		"express-validator": "^7.3.0",
-		"firebase-admin": "^13.6.0",
-		"openai": "^6.7.0",
-		"pino": "^9.5.0",
-		"pino-http": "^11.0.0"
-	},
-	"devDependencies": {
-		"supertest": "^6.3.3",
-		"vitest": "^4.0.8"
-	}
+  "type": "module",
+  "scripts": {
+    "api:dev": "node api/server.mjs",
+    "web:dev": "npm run dev --prefix web",
+    "dev": "concurrently \"npm run api:dev\" \"npm run web:dev\"",
+    "start": "npm run dev",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check ."
+  },
+  "dependencies": {
+    "@dqbd/tiktoken": "^1.0.22",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "express-validator": "^7.3.0",
+    "firebase-admin": "^13.6.0",
+    "openai": "^6.7.0",
+    "pino": "^9.5.0",
+    "pino-http": "^11.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.13.0",
+    "@typescript-eslint/parser": "^8.13.0",
+    "@eslint/js": "^9.13.0",
+    "globals": "^15.11.0",
+    "eslint": "^9.13.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-vue": "^9.28.0",
+    "prettier": "^3.3.3",
+    "supertest": "^6.3.3",
+    "vitest": "^4.0.8",
+    "vue-eslint-parser": "^9.4.3"
+  }
 }

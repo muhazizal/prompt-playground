@@ -75,7 +75,7 @@ function prev() {
 
 		<div v-else>
 			<div v-if="pager.items.value.length > 0" class="space-y-3">
-				<slot name="item" v-for="(item, i) in pager.items.value" :item="item" :index="i" :key="i">
+				<slot v-for="(item, i) in pager.items.value" :key="i" name="item" :item="item" :index="i">
 					<UCard>
 						<pre class="text-xs whitespace-pre-wrap">{{ item }}</pre>
 					</UCard>

@@ -116,9 +116,9 @@ onMounted(refresh)
 					>
 						<!-- Title or inline editor -->
 						<button
+							v-if="editingId !== s.id"
 							class="flex-1 text-left"
 							@click="emit('select', s.id)"
-							v-if="editingId !== s.id"
 						>
 							<span class="text-sm">{{ s.title }}</span>
 						</button>
@@ -132,8 +132,8 @@ onMounted(refresh)
 
 						<!-- Actions -->
 						<div
-							class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
 							v-if="editingId !== s.id"
+							class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
 						>
 							<UButton
 								icon="i-heroicons-pencil"

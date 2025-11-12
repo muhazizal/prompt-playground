@@ -40,7 +40,7 @@ defineExpose({
 
 <template>
 	<div class="grid gap-4">
-		<div ref="responseTextRef" v-if="props.responseText" class="flex flex-col gap-2">
+		<div v-if="props.responseText" ref="responseTextRef" class="flex flex-col gap-2">
 			<div class="flex items-center justify-between">
 				<div class="text-sm font-semibold">Response</div>
 				<UButton size="xs" icon="i-heroicons-clipboard" @click="emit('copy', props.responseText)"
@@ -52,17 +52,17 @@ defineExpose({
 
 		<div v-if="props.error" class="text-red-600 text-sm">{{ props.error }}</div>
 
-		<div ref="generatedImageRef" v-if="props.generatedImageUrl">
+		<div v-if="props.generatedImageUrl" ref="generatedImageRef">
 			<div class="text-sm font-semibold mb-2">Generated Image</div>
 			<img :src="props.generatedImageUrl" alt="Generated image" class="rounded border" />
 		</div>
 
-		<div ref="ttsAudioRef" v-if="props.ttsAudioUrl">
+		<div v-if="props.ttsAudioUrl" ref="ttsAudioRef">
 			<div class="text-sm font-semibold mb-2">Generated Audio</div>
 			<audio :src="props.ttsAudioUrl" controls />
 		</div>
 
-		<div ref="outputRunRef" v-if="props.outputRun?.runs?.length">
+		<div v-if="props.outputRun?.runs?.length" ref="outputRunRef">
 			<div class="text-sm font-semibold mb-2">Run Outputs</div>
 			<PromptOutputList :runs="props.outputRun!.runs" @copy="(t) => emit('copy', t)" />
 		</div>

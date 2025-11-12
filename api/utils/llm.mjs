@@ -20,9 +20,8 @@ export function validateResultShape(obj) {
     // Validate sources
     if (parsed && Array.isArray(parsed.sources)) out.sources = parsed.sources
     else errors.push('sources missing')
-  } catch (e) {
+  } catch {
     errors.push('json parse failed')
   }
   return { normalized: out, errors }
 }
-

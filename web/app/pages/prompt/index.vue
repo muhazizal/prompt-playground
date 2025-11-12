@@ -505,8 +505,8 @@ watch(
 
 				<ImageGenInputs
 					v-if="selectedTask.task === 'image-generation'"
-					:imageSizeOptions="imageSizeOptions"
 					v-model:imageSize="imageSize"
+					:imageSizeOptions="imageSizeOptions"
 				/>
 
 				<VisionInputs
