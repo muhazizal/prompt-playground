@@ -8,7 +8,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --check ."
+    "format": "prettier --check .",
+    "types:client": "openapi-typescript http://localhost:4000/openapi -o web/app/helpers/swagger.d.ts"
   },
   "dependencies": {
     "@dqbd/tiktoken": "^1.0.22",
@@ -21,7 +22,8 @@
     "firebase-admin": "^13.6.0",
     "openai": "^6.7.0",
     "pino": "^9.5.0",
-    "pino-http": "^11.0.0"
+    "pino-http": "^11.0.0",
+    "swagger-ui-express": "^5.0.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.13.0",
@@ -34,6 +36,7 @@
     "prettier": "^3.3.3",
     "supertest": "^6.3.3",
     "vitest": "^4.0.8",
-    "vue-eslint-parser": "^9.4.3"
+    "vue-eslint-parser": "^9.4.3",
+    "openapi-typescript": "^7.5.0"
   }
 }

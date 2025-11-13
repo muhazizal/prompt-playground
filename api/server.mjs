@@ -1,6 +1,8 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import swaggerUi from 'swagger-ui-express'
+
 dotenv.config()
 
 import { registerMetricsRoute, createRequestCounterMiddleware } from './metrics.mjs'
@@ -47,6 +49,8 @@ function registerRoutes(app) {
   registerAgentRoutes(app)
   registerMetricsRoute(app)
   registerOpenApiRoute(app)
+
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(null, { swaggerOptions: { url: '/openapi' } }))
 }
 
 export function createApp() {
