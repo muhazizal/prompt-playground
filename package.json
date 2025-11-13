@@ -5,6 +5,7 @@
     "web:dev": "npm run dev --prefix web",
     "dev": "concurrently \"npm run api:dev\" \"npm run web:dev\"",
     "start": "npm run dev",
+    "pretest": "npm run postinstall --prefix web",
     "test": "vitest run",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
